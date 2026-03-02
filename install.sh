@@ -48,8 +48,9 @@ if [[ "$OS" == "Linux" ]]; then
 fi
 
 # ─── Detect default shell ────────────────────────────────────────
-DEFAULT_SHELL="$(basename "$SHELL")"
-info "Detected: $OS ${DISTRO:+($DISTRO)} — default shell: $DEFAULT_SHELL"
+DEFAULT_SHELL="$(basename "${SHELL:-/bin/bash}")"
+CURRENT_USER="${USER:-$(whoami)}"
+info "Detected: $OS ${DISTRO:+($DISTRO)} — default shell: $DEFAULT_SHELL — user: $CURRENT_USER"
 echo ""
 
 # ─── macOS: Install via Homebrew ──────────────────────────────────
@@ -124,7 +125,7 @@ install_debian() {
     if ! command -v eza &>/dev/null; then
         info "Installing eza..."
         as_root mkdir -p /etc/apt/keyrings
-        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | as_root gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | as_root gpg --yes --dearmor -o /etc/apt/keyrings/gierens.gpg
         echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | as_root tee /etc/apt/sources.list.d/gierens.list
         as_root chmod 644 /etc/apt/keyrings/gierens.gpg
         as_root apt update
@@ -193,7 +194,7 @@ install_debian() {
         local ARCH=$(uname -m)
         [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"
         [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
-        wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" 2>/dev/null && as_root chmod +x /usr/local/bin/yq || warn "yq: install manually"
+        as_root wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" 2>/dev/null && as_root chmod +x /usr/local/bin/yq || warn "yq: install manually"
     fi
 
     success "All packages installed"
@@ -205,7 +206,7 @@ install_fedora() {
     echo ""
 
     info "Installing dnf packages..."
-    as_root dnf install -y \
+    as_root dnf install -y --setopt=strict=0 \
         curl \
         wget \
         git \
@@ -286,11 +287,11 @@ install_zsh_shell() {
     success "ZSH installed"
 
     local ZSH_PATH
-    ZSH_PATH="$(which zsh)"
+    ZSH_PATH="$(command -v zsh)"
 
-    info "Setting default shell to $ZSH_PATH for $USER..."
-    as_root chsh -s "$ZSH_PATH" "$USER"
-    success "Default shell for $USER → $ZSH_PATH"
+    info "Setting default shell to $ZSH_PATH for $CURRENT_USER..."
+    as_root chsh -s "$ZSH_PATH" "$CURRENT_USER"
+    success "Default shell for $CURRENT_USER → $ZSH_PATH"
 
     info "Setting default shell to $ZSH_PATH for root..."
     as_root chsh -s "$ZSH_PATH" root
@@ -496,7 +497,7 @@ if [[ "$OS" == "Linux" && "$DEFAULT_SHELL" != "zsh" ]]; then
         install_zsh_shell
     else
         echo ""
-        read -rp "Install zsh and set as default shell for $USER and root? [y/N] " zsh_answer
+        read -rp "Install zsh and set as default shell for $CURRENT_USER and root? [y/N] " zsh_answer
         if [[ "$zsh_answer" =~ ^[Yy] ]]; then
             install_zsh_shell
         fi
