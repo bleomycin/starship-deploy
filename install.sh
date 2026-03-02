@@ -149,9 +149,13 @@ install_debian() {
         local DUST_VER=$(curl -s https://api.github.com/repos/bootandy/dust/releases/latest | jq -r '.tag_name' | tr -d 'v')
         local ARCH=$(dpkg --print-architecture)
         if [[ "$ARCH" == "amd64" ]]; then
-            wget -qO /tmp/dust.deb "https://github.com/bootandy/dust/releases/latest/download/du-dust_${DUST_VER}-1_${ARCH}.deb"
-            as_root dpkg -i /tmp/dust.deb
-            rm /tmp/dust.deb
+            wget -qO /tmp/dust.deb "https://github.com/bootandy/dust/releases/latest/download/du-dust_${DUST_VER}-1_${ARCH}.deb" 2>/dev/null || rm -f /tmp/dust.deb
+            if [[ -s /tmp/dust.deb ]]; then
+                as_root dpkg -i /tmp/dust.deb
+                rm /tmp/dust.deb
+            else
+                warn "dust: download failed, install manually"
+            fi
         else
             warn "dust: download manually for $ARCH from https://github.com/bootandy/dust/releases"
         fi
@@ -165,13 +169,15 @@ install_debian() {
     # procs
     if ! command -v procs &>/dev/null; then
         info "Installing procs..."
-        local PROCS_VER=$(curl -s https://api.github.com/repos/dalance/procs/releases/latest | jq -r '.tag_name' | tr -d 'v')
+        local PROCS_TAG=$(curl -s https://api.github.com/repos/dalance/procs/releases/latest | jq -r '.tag_name')
         local ARCH=$(uname -m)
-        wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_VER}-${ARCH}-linux.zip" 2>/dev/null || warn "procs: download manually"
-        if [[ -f /tmp/procs.zip ]]; then
+        wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_TAG}-${ARCH}-linux.zip" 2>/dev/null || rm -f /tmp/procs.zip
+        if [[ -s /tmp/procs.zip ]]; then
             unzip -o /tmp/procs.zip -d /tmp/procs_bin
             as_root mv /tmp/procs_bin/procs /usr/local/bin/
             rm -rf /tmp/procs.zip /tmp/procs_bin
+        else
+            warn "procs: download failed, install manually"
         fi
     fi
 
@@ -179,11 +185,16 @@ install_debian() {
     if ! command -v sshs &>/dev/null; then
         info "Installing sshs..."
         local ARCH=$(uname -m)
-        wget -qO /tmp/sshs.tar.gz "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${ARCH}.tar.gz" 2>/dev/null || warn "sshs: download manually"
-        if [[ -f /tmp/sshs.tar.gz ]]; then
-            tar xzf /tmp/sshs.tar.gz -C /tmp
-            as_root mv /tmp/sshs /usr/local/bin/
-            rm /tmp/sshs.tar.gz
+        [[ "$ARCH" == "x86_64" ]] && local SSHS_ARCH="amd64"
+        [[ "$ARCH" == "aarch64" ]] && local SSHS_ARCH="arm64"
+        if [[ -n "${SSHS_ARCH:-}" ]]; then
+            wget -qO /tmp/sshs "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${SSHS_ARCH}" 2>/dev/null || rm -f /tmp/sshs
+            if [[ -s /tmp/sshs ]]; then
+                chmod +x /tmp/sshs
+                as_root mv /tmp/sshs /usr/local/bin/
+            else
+                warn "sshs: download failed, install manually"
+            fi
         fi
     fi
 
@@ -235,11 +246,13 @@ install_fedora() {
     if ! command -v eza &>/dev/null; then
         info "Installing eza from GitHub..."
         local ARCH=$(uname -m)
-        wget -qO /tmp/eza.tar.gz "https://github.com/eza-community/eza/releases/latest/download/eza_${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null || warn "eza: download manually"
-        if [[ -f /tmp/eza.tar.gz ]]; then
+        wget -qO /tmp/eza.tar.gz "https://github.com/eza-community/eza/releases/latest/download/eza_${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null || rm -f /tmp/eza.tar.gz
+        if [[ -s /tmp/eza.tar.gz ]]; then
             tar xzf /tmp/eza.tar.gz -C /tmp
             as_root mv /tmp/eza /usr/local/bin/
             rm /tmp/eza.tar.gz
+        else
+            warn "eza: download failed, install manually"
         fi
     fi
 
@@ -252,12 +265,14 @@ install_fedora() {
     if ! command -v btop &>/dev/null; then
         info "Installing btop from GitHub..."
         local ARCH=$(uname -m)
-        wget -qO /tmp/btop.tbz "https://github.com/aristocratos/btop/releases/latest/download/btop-${ARCH}-linux-musl.tbz" 2>/dev/null || warn "btop: download manually"
-        if [[ -f /tmp/btop.tbz ]]; then
+        wget -qO /tmp/btop.tbz "https://github.com/aristocratos/btop/releases/latest/download/btop-${ARCH}-linux-musl.tbz" 2>/dev/null || rm -f /tmp/btop.tbz
+        if [[ -s /tmp/btop.tbz ]]; then
             mkdir -p /tmp/btop_install
             tar xjf /tmp/btop.tbz -C /tmp/btop_install
             as_root /tmp/btop_install/btop/install.sh /usr/local
             rm -rf /tmp/btop.tbz /tmp/btop_install
+        else
+            warn "btop: download failed, install manually"
         fi
     fi
 
@@ -266,11 +281,13 @@ install_fedora() {
         info "Installing dust from GitHub..."
         local DUST_VER=$(curl -s https://api.github.com/repos/bootandy/dust/releases/latest | jq -r '.tag_name' | tr -d 'v')
         local ARCH=$(uname -m)
-        wget -qO /tmp/dust.tar.gz "https://github.com/bootandy/dust/releases/latest/download/dust-${DUST_VER}-${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null
-        if [[ -f /tmp/dust.tar.gz ]]; then
+        wget -qO /tmp/dust.tar.gz "https://github.com/bootandy/dust/releases/latest/download/dust-${DUST_VER}-${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null || rm -f /tmp/dust.tar.gz
+        if [[ -s /tmp/dust.tar.gz ]]; then
             tar xzf /tmp/dust.tar.gz -C /tmp
             as_root mv /tmp/dust-*/dust /usr/local/bin/
             rm -rf /tmp/dust*
+        else
+            warn "dust: download failed, install manually"
         fi
     fi
 
@@ -281,10 +298,12 @@ install_fedora() {
         [[ "$ARCH" == "x86_64" ]] && local DUF_ARCH="amd64"
         [[ "$ARCH" == "aarch64" ]] && local DUF_ARCH="arm64"
         if [[ -n "${DUF_ARCH:-}" ]]; then
-            wget -qO /tmp/duf.rpm "https://github.com/muesli/duf/releases/latest/download/duf_0.8.1_linux_${DUF_ARCH}.rpm" 2>/dev/null
-            if [[ -f /tmp/duf.rpm ]]; then
+            wget -qO /tmp/duf.rpm "https://github.com/muesli/duf/releases/latest/download/duf_0.8.1_linux_${DUF_ARCH}.rpm" 2>/dev/null || rm -f /tmp/duf.rpm
+            if [[ -s /tmp/duf.rpm ]]; then
                 as_root rpm -i /tmp/duf.rpm 2>/dev/null || true
                 rm /tmp/duf.rpm
+            else
+                warn "duf: download failed, install manually"
             fi
         fi
     fi
@@ -292,13 +311,15 @@ install_fedora() {
     # procs (GitHub binary fallback)
     if ! command -v procs &>/dev/null; then
         info "Installing procs from GitHub..."
-        local PROCS_VER=$(curl -s https://api.github.com/repos/dalance/procs/releases/latest | jq -r '.tag_name' | tr -d 'v')
+        local PROCS_TAG=$(curl -s https://api.github.com/repos/dalance/procs/releases/latest | jq -r '.tag_name')
         local ARCH=$(uname -m)
-        wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_VER}-${ARCH}-linux.zip" 2>/dev/null || warn "procs: download manually"
-        if [[ -f /tmp/procs.zip ]]; then
+        wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_TAG}-${ARCH}-linux.zip" 2>/dev/null || rm -f /tmp/procs.zip
+        if [[ -s /tmp/procs.zip ]]; then
             unzip -o /tmp/procs.zip -d /tmp/procs_bin
             as_root mv /tmp/procs_bin/procs /usr/local/bin/
             rm -rf /tmp/procs.zip /tmp/procs_bin
+        else
+            warn "procs: download failed, install manually"
         fi
     fi
 
@@ -306,11 +327,16 @@ install_fedora() {
     if ! command -v sshs &>/dev/null; then
         info "Installing sshs from GitHub..."
         local ARCH=$(uname -m)
-        wget -qO /tmp/sshs.tar.gz "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${ARCH}.tar.gz" 2>/dev/null || warn "sshs: download manually"
-        if [[ -f /tmp/sshs.tar.gz ]]; then
-            tar xzf /tmp/sshs.tar.gz -C /tmp
-            as_root mv /tmp/sshs /usr/local/bin/
-            rm /tmp/sshs.tar.gz
+        [[ "$ARCH" == "x86_64" ]] && local SSHS_ARCH="amd64"
+        [[ "$ARCH" == "aarch64" ]] && local SSHS_ARCH="arm64"
+        if [[ -n "${SSHS_ARCH:-}" ]]; then
+            wget -qO /tmp/sshs "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${SSHS_ARCH}" 2>/dev/null || rm -f /tmp/sshs
+            if [[ -s /tmp/sshs ]]; then
+                chmod +x /tmp/sshs
+                as_root mv /tmp/sshs /usr/local/bin/
+            else
+                warn "sshs: download failed, install manually"
+            fi
         fi
     fi
 
