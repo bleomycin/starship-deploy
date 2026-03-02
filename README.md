@@ -48,10 +48,11 @@ bash install.sh
 
 Install a Nerd Font (required for icons):
 ```bash
-brew install --cask font-meslo-lg-nerd-font
+brew install --cask font-jetbrains-mono-nerd-font
+# or: brew install --cask font-meslo-lg-nerd-font
 ```
 
-Set the font in iTerm2: **Settings → Profiles → Text → Font → MesloLGS Nerd Font** (13–14pt)
+Set the font in iTerm2: **Settings → Profiles → Text → Font → JetBrainsMono Nerd Font Mono** (13–14pt)
 
 Restart your shell:
 ```bash
