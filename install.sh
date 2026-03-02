@@ -231,29 +231,80 @@ install_fedora() {
     fi
     success "Starship installed"
 
+    # eza (GitHub binary fallback)
+    if ! command -v eza &>/dev/null; then
+        info "Installing eza from GitHub..."
+        local ARCH=$(uname -m)
+        wget -qO /tmp/eza.tar.gz "https://github.com/eza-community/eza/releases/latest/download/eza_${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null || warn "eza: download manually"
+        if [[ -f /tmp/eza.tar.gz ]]; then
+            tar xzf /tmp/eza.tar.gz -C /tmp
+            as_root mv /tmp/eza /usr/local/bin/
+            rm /tmp/eza.tar.gz
+        fi
+    fi
+
     # zoxide
     if ! command -v zoxide &>/dev/null; then
-        as_root dnf install -y zoxide 2>/dev/null || curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+    fi
+
+    # btop (GitHub binary fallback)
+    if ! command -v btop &>/dev/null; then
+        info "Installing btop from GitHub..."
+        local ARCH=$(uname -m)
+        wget -qO /tmp/btop.tbz "https://github.com/aristocratos/btop/releases/latest/download/btop-${ARCH}-linux-musl.tbz" 2>/dev/null || warn "btop: download manually"
+        if [[ -f /tmp/btop.tbz ]]; then
+            mkdir -p /tmp/btop_install
+            tar xjf /tmp/btop.tbz -C /tmp/btop_install
+            as_root /tmp/btop_install/btop/install.sh /usr/local
+            rm -rf /tmp/btop.tbz /tmp/btop_install
+        fi
     fi
 
     # dust
     if ! command -v dust &>/dev/null; then
-        as_root dnf install -y dust 2>/dev/null || {
-            info "Installing dust from GitHub..."
-            local DUST_VER=$(curl -s https://api.github.com/repos/bootandy/dust/releases/latest | jq -r '.tag_name' | tr -d 'v')
-            local ARCH=$(uname -m)
-            wget -qO /tmp/dust.tar.gz "https://github.com/bootandy/dust/releases/latest/download/dust-${DUST_VER}-${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null
-            if [[ -f /tmp/dust.tar.gz ]]; then
-                tar xzf /tmp/dust.tar.gz -C /tmp
-                as_root mv /tmp/dust-*/dust /usr/local/bin/
-                rm -rf /tmp/dust*
+        info "Installing dust from GitHub..."
+        local DUST_VER=$(curl -s https://api.github.com/repos/bootandy/dust/releases/latest | jq -r '.tag_name' | tr -d 'v')
+        local ARCH=$(uname -m)
+        wget -qO /tmp/dust.tar.gz "https://github.com/bootandy/dust/releases/latest/download/dust-${DUST_VER}-${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null
+        if [[ -f /tmp/dust.tar.gz ]]; then
+            tar xzf /tmp/dust.tar.gz -C /tmp
+            as_root mv /tmp/dust-*/dust /usr/local/bin/
+            rm -rf /tmp/dust*
+        fi
+    fi
+
+    # duf (GitHub binary fallback)
+    if ! command -v duf &>/dev/null; then
+        info "Installing duf from GitHub..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "x86_64" ]] && local DUF_ARCH="amd64"
+        [[ "$ARCH" == "aarch64" ]] && local DUF_ARCH="arm64"
+        if [[ -n "${DUF_ARCH:-}" ]]; then
+            wget -qO /tmp/duf.rpm "https://github.com/muesli/duf/releases/latest/download/duf_0.8.1_linux_${DUF_ARCH}.rpm" 2>/dev/null
+            if [[ -f /tmp/duf.rpm ]]; then
+                as_root rpm -i /tmp/duf.rpm 2>/dev/null || true
+                rm /tmp/duf.rpm
             fi
-        }
+        fi
+    fi
+
+    # procs (GitHub binary fallback)
+    if ! command -v procs &>/dev/null; then
+        info "Installing procs from GitHub..."
+        local PROCS_VER=$(curl -s https://api.github.com/repos/dalance/procs/releases/latest | jq -r '.tag_name' | tr -d 'v')
+        local ARCH=$(uname -m)
+        wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_VER}-${ARCH}-linux.zip" 2>/dev/null || warn "procs: download manually"
+        if [[ -f /tmp/procs.zip ]]; then
+            unzip -o /tmp/procs.zip -d /tmp/procs_bin
+            as_root mv /tmp/procs_bin/procs /usr/local/bin/
+            rm -rf /tmp/procs.zip /tmp/procs_bin
+        fi
     fi
 
     # sshs
     if ! command -v sshs &>/dev/null; then
-        info "Installing sshs..."
+        info "Installing sshs from GitHub..."
         local ARCH=$(uname -m)
         wget -qO /tmp/sshs.tar.gz "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${ARCH}.tar.gz" 2>/dev/null || warn "sshs: download manually"
         if [[ -f /tmp/sshs.tar.gz ]]; then
@@ -263,7 +314,16 @@ install_fedora() {
         fi
     fi
 
-    as_root dnf install -y tldr yq 2>/dev/null || true
+    as_root dnf install -y --setopt=strict=0 tldr yq 2>/dev/null || true
+
+    # yq (GitHub binary fallback)
+    if ! command -v yq &>/dev/null; then
+        info "Installing yq from GitHub..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        as_root wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" 2>/dev/null && as_root chmod +x /usr/local/bin/yq || warn "yq: install manually"
+    fi
 
     success "All packages installed"
 }
