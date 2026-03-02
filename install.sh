@@ -20,6 +20,15 @@ fail()    { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ─── Privilege helper (sudo when needed, direct when root) ──────
+as_root() {
+    if [[ "$EUID" -eq 0 ]]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 # ─── Parse flags ────────────────────────────────────────────────
 INSTALL_ZSH=""
 for arg in "$@"; do
@@ -86,10 +95,10 @@ install_debian() {
     info "=== Debian/Ubuntu Installation ==="
     echo ""
 
-    sudo apt update
+    as_root apt update
 
     info "Installing apt packages..."
-    sudo apt install -y \
+    as_root apt install -y \
         curl \
         wget \
         git \
@@ -113,12 +122,12 @@ install_debian() {
     # eza
     if ! command -v eza &>/dev/null; then
         info "Installing eza..."
-        sudo mkdir -p /etc/apt/keyrings
-        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list
-        sudo chmod 644 /etc/apt/keyrings/gierens.gpg
-        sudo apt update
-        sudo apt install -y eza
+        as_root mkdir -p /etc/apt/keyrings
+        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | as_root gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | as_root tee /etc/apt/sources.list.d/gierens.list
+        as_root chmod 644 /etc/apt/keyrings/gierens.gpg
+        as_root apt update
+        as_root apt install -y eza
     fi
     success "eza installed"
 
@@ -129,7 +138,7 @@ install_debian() {
 
     # btop
     if ! command -v btop &>/dev/null; then
-        sudo apt install -y btop 2>/dev/null || warn "btop not in apt, install manually"
+        as_root apt install -y btop 2>/dev/null || warn "btop not in apt, install manually"
     fi
 
     # dust
@@ -139,7 +148,7 @@ install_debian() {
         local ARCH=$(dpkg --print-architecture)
         if [[ "$ARCH" == "amd64" ]]; then
             wget -qO /tmp/dust.deb "https://github.com/bootandy/dust/releases/latest/download/du-dust_${DUST_VER}-1_${ARCH}.deb"
-            sudo dpkg -i /tmp/dust.deb
+            as_root dpkg -i /tmp/dust.deb
             rm /tmp/dust.deb
         else
             warn "dust: download manually for $ARCH from https://github.com/bootandy/dust/releases"
@@ -148,7 +157,7 @@ install_debian() {
 
     # duf
     if ! command -v duf &>/dev/null; then
-        sudo apt install -y duf 2>/dev/null || warn "duf not in apt, install manually"
+        as_root apt install -y duf 2>/dev/null || warn "duf not in apt, install manually"
     fi
 
     # procs
@@ -159,7 +168,7 @@ install_debian() {
         wget -qO /tmp/procs.zip "https://github.com/dalance/procs/releases/latest/download/procs-${PROCS_VER}-${ARCH}-linux.zip" 2>/dev/null || warn "procs: download manually"
         if [[ -f /tmp/procs.zip ]]; then
             unzip -o /tmp/procs.zip -d /tmp/procs_bin
-            sudo mv /tmp/procs_bin/procs /usr/local/bin/
+            as_root mv /tmp/procs_bin/procs /usr/local/bin/
             rm -rf /tmp/procs.zip /tmp/procs_bin
         fi
     fi
@@ -171,19 +180,19 @@ install_debian() {
         wget -qO /tmp/sshs.tar.gz "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${ARCH}.tar.gz" 2>/dev/null || warn "sshs: download manually"
         if [[ -f /tmp/sshs.tar.gz ]]; then
             tar xzf /tmp/sshs.tar.gz -C /tmp
-            sudo mv /tmp/sshs /usr/local/bin/
+            as_root mv /tmp/sshs /usr/local/bin/
             rm /tmp/sshs.tar.gz
         fi
     fi
 
-    sudo apt install -y tldr 2>/dev/null || true
+    as_root apt install -y tldr 2>/dev/null || true
 
     # yq
     if ! command -v yq &>/dev/null; then
         local ARCH=$(uname -m)
         [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"
         [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
-        wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" 2>/dev/null && sudo chmod +x /usr/local/bin/yq || warn "yq: install manually"
+        wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" 2>/dev/null && as_root chmod +x /usr/local/bin/yq || warn "yq: install manually"
     fi
 
     success "All packages installed"
@@ -195,7 +204,7 @@ install_fedora() {
     echo ""
 
     info "Installing dnf packages..."
-    sudo dnf install -y \
+    as_root dnf install -y \
         curl \
         wget \
         git \
@@ -222,19 +231,19 @@ install_fedora() {
 
     # zoxide
     if ! command -v zoxide &>/dev/null; then
-        sudo dnf install -y zoxide 2>/dev/null || curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+        as_root dnf install -y zoxide 2>/dev/null || curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
     fi
 
     # dust
     if ! command -v dust &>/dev/null; then
-        sudo dnf install -y dust 2>/dev/null || {
+        as_root dnf install -y dust 2>/dev/null || {
             info "Installing dust from GitHub..."
             local DUST_VER=$(curl -s https://api.github.com/repos/bootandy/dust/releases/latest | jq -r '.tag_name' | tr -d 'v')
             local ARCH=$(uname -m)
             wget -qO /tmp/dust.tar.gz "https://github.com/bootandy/dust/releases/latest/download/dust-${DUST_VER}-${ARCH}-unknown-linux-gnu.tar.gz" 2>/dev/null
             if [[ -f /tmp/dust.tar.gz ]]; then
                 tar xzf /tmp/dust.tar.gz -C /tmp
-                sudo mv /tmp/dust-*/dust /usr/local/bin/
+                as_root mv /tmp/dust-*/dust /usr/local/bin/
                 rm -rf /tmp/dust*
             fi
         }
@@ -247,12 +256,12 @@ install_fedora() {
         wget -qO /tmp/sshs.tar.gz "https://github.com/quantumsheep/sshs/releases/latest/download/sshs-linux-${ARCH}.tar.gz" 2>/dev/null || warn "sshs: download manually"
         if [[ -f /tmp/sshs.tar.gz ]]; then
             tar xzf /tmp/sshs.tar.gz -C /tmp
-            sudo mv /tmp/sshs /usr/local/bin/
+            as_root mv /tmp/sshs /usr/local/bin/
             rm /tmp/sshs.tar.gz
         fi
     fi
 
-    sudo dnf install -y tldr yq 2>/dev/null || true
+    as_root dnf install -y tldr yq 2>/dev/null || true
 
     success "All packages installed"
 }
@@ -267,10 +276,10 @@ install_zsh_shell() {
 
     case "$DISTRO" in
         debian|ubuntu|pop|linuxmint|raspbian)
-            sudo apt install -y zsh
+            as_root apt install -y zsh
             ;;
         fedora|rhel|centos|rocky|alma)
-            sudo dnf install -y zsh
+            as_root dnf install -y zsh
             ;;
     esac
     success "ZSH installed"
@@ -279,11 +288,11 @@ install_zsh_shell() {
     ZSH_PATH="$(which zsh)"
 
     info "Setting default shell to $ZSH_PATH for $USER..."
-    sudo chsh -s "$ZSH_PATH" "$USER"
+    as_root chsh -s "$ZSH_PATH" "$USER"
     success "Default shell for $USER → $ZSH_PATH"
 
     info "Setting default shell to $ZSH_PATH for root..."
-    sudo chsh -s "$ZSH_PATH" root
+    as_root chsh -s "$ZSH_PATH" root
     success "Default shell for root → $ZSH_PATH"
 
     DEFAULT_SHELL="zsh"
