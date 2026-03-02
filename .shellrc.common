@@ -1,0 +1,243 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  .shellrc.common — Shared config for Bash + ZSH                ║
+# ║  Sourced by both .zshrc and .bashrc                            ║
+# ║  POSIX-compatible (no zsh-isms, no bash-isms)                   ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+# ─── Platform detection ───────────────────────────────────────────
+case "$(uname -s)" in
+    Darwin) export IS_MACOS=true  ;;
+    Linux)  export IS_LINUX=true  ;;
+esac
+
+# ─── Homebrew (macOS) or Linuxbrew ────────────────────────────────
+if [ "$IS_MACOS" = true ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+elif [ -d /home/linuxbrew/.linuxbrew ]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi
+
+# ─── PATH additions ──────────────────────────────────────────────
+export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+
+# ─── Editor ───────────────────────────────────────────────────────
+export EDITOR="${EDITOR:-nano}"
+
+# ─── Modern CLI tool aliases ──────────────────────────────────────
+# Each alias checks if the tool exists first for portability.
+# On systems where these aren't installed, original commands work as normal.
+
+# eza → ls replacement
+if command -v eza >/dev/null 2>&1; then
+    # Use unified config dir (eza on macOS defaults to ~/Library/Application Support/eza)
+    export EZA_CONFIG_DIR="$HOME/.config/eza"
+    alias ls='eza --icons --group-directories-first'
+    alias ll='eza -lah --icons --group-directories-first --git'
+    alias la='eza -a --icons --group-directories-first'
+    alias lt='eza --tree --icons --level=3 --group-directories-first'
+    alias llt='eza -lah --tree --icons --level=2 --group-directories-first --git'
+else
+    alias ll='ls -lah'
+    alias la='ls -a'
+fi
+
+# bat → cat replacement
+if command -v bat >/dev/null 2>&1; then
+    alias cat='bat --paging=never'
+    alias catp='bat --plain --paging=never'
+    alias catl='bat --paging=always'
+    export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+    export BAT_THEME="OneHalfDark"
+elif command -v batcat >/dev/null 2>&1; then
+    alias bat='batcat'
+    alias cat='batcat --paging=never'
+    alias catp='batcat --plain --paging=never'
+    alias catl='batcat --paging=always'
+    export MANPAGER="sh -c 'col -bx | batcat -l man -p'"
+    export BAT_THEME="OneHalfDark"
+fi
+
+# fd → find replacement (Debian ships it as fdfind)
+if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
+    alias fd='fdfind'
+fi
+
+# ripgrep → grep replacement
+if command -v rg >/dev/null 2>&1; then
+    alias grep='rg'
+fi
+
+# dust → du replacement
+if command -v dust >/dev/null 2>&1; then
+    alias du='dust'
+fi
+
+# duf → df replacement
+if command -v duf >/dev/null 2>&1; then
+    alias df='duf'
+fi
+
+# btop → top replacement
+if command -v btop >/dev/null 2>&1; then
+    alias top='btop'
+fi
+
+# procs → ps replacement
+if command -v procs >/dev/null 2>&1; then
+    alias ps='procs'
+fi
+
+# Midnight Commander — exit into the directory you navigated to
+if command -v mc >/dev/null 2>&1; then
+    if [ -f /usr/libexec/mc/mc-wrapper.sh ]; then
+        alias mc='. /usr/libexec/mc/mc-wrapper.sh'
+    elif [ -f /usr/local/opt/midnight-commander/libexec/mc/mc-wrapper.sh ]; then
+        alias mc='. /usr/local/opt/midnight-commander/libexec/mc/mc-wrapper.sh'
+    elif [ -f /usr/share/mc/bin/mc-wrapper.sh ]; then
+        alias mc='. /usr/share/mc/bin/mc-wrapper.sh'
+    fi
+fi
+
+# ─── zoxide (smart cd) ───────────────────────────────────────────
+# Detects current shell automatically
+if command -v zoxide >/dev/null 2>&1; then
+    eval "$(zoxide init "$(basename "$SHELL")")"
+fi
+
+# ─── fzf (fuzzy finder) ──────────────────────────────────────────
+if command -v fzf >/dev/null 2>&1; then
+    export FZF_DEFAULT_OPTS="
+        --height=40%
+        --layout=reverse
+        --border=rounded
+        --info=inline
+        --prompt='❯ '
+        --pointer='▶'
+        --marker='✓'
+        --color=bg+:#2c313a,fg+:#dcdfe4,hl:#e06c75,hl+:#e06c75
+        --color=info:#c678dd,prompt:#e06c75,pointer:#e06c75,marker:#98c379
+        --color=spinner:#d19a66,header:#e06c75,border:#5c6370
+    "
+
+    # Use fd for fzf if available
+    if command -v fd >/dev/null 2>&1; then
+        export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+        export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+        export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+    elif command -v fdfind >/dev/null 2>&1; then
+        export FZF_DEFAULT_COMMAND='fdfind --type f --hidden --exclude .git'
+        export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+        export FZF_ALT_C_COMMAND='fdfind --type d --hidden --exclude .git'
+    fi
+fi
+
+# ─── SSH shortcuts ────────────────────────────────────────────────
+alias sshk='ssh-keygen -t ed25519 -C'
+alias sshfp='ssh-keygen -l -f'
+alias sshcopy='ssh-copy-id -i ~/.ssh/id_ed25519.pub'
+
+# ─── Docker shortcuts ────────────────────────────────────────────
+alias d='docker'
+alias dc='docker compose'
+alias dps='docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"'
+alias dpsa='docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"'
+alias dlog='docker logs -f --tail 100'
+alias dex='docker exec -it'
+alias dimg='docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"'
+alias dprune='docker system prune -af --volumes'
+alias dstats='docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"'
+alias dvol='docker volume ls'
+
+# ─── Network ─────────────────────────────────────────────────────
+alias ports='ss -tulnp 2>/dev/null || netstat -tulnp'
+alias myip='curl -s ifconfig.me && echo'
+alias localip='ip -4 addr show | grep -oP "(?<=inet )[\d.]+" 2>/dev/null || ipconfig getifaddr en0'
+alias pingg='ping -c 5 1.1.1.1'
+
+# ─── System ──────────────────────────────────────────────────────
+alias path='echo $PATH | tr ":" "\n"'
+alias diskuse='df -h 2>/dev/null | grep -E "^(/dev|Filesystem)"'
+alias meminfo='free -h 2>/dev/null || vm_stat'
+alias cpuinfo='lscpu 2>/dev/null || sysctl -n machdep.cpu.brand_string'
+
+# ─── File operations ─────────────────────────────────────────────
+alias cp='cp -iv'
+alias mv='mv -iv'
+alias rm='rm -iv'
+alias mkdir='mkdir -pv'
+alias wget='wget -c'
+
+# Tar shortcuts
+alias untar='tar -xvf'
+alias mktar='tar -cvf'
+alias mktgz='tar -czvf'
+
+# Quick edit common configs
+alias shellrc='${EDITOR:-nano} ~/.shellrc.common'
+alias starconf='${EDITOR:-nano} ~/.config/starship.toml'
+alias sshconf='${EDITOR:-nano} ~/.ssh/config'
+
+# ─── Functions ────────────────────────────────────────────────────
+
+# Quick mkdir + cd
+mkcd() { mkdir -p "$1" && cd "$1"; }
+
+# Extract anything
+extract() {
+    if [ -f "$1" ]; then
+        case "$1" in
+            *.tar.bz2)  tar xjf "$1"     ;;
+            *.tar.gz)   tar xzf "$1"     ;;
+            *.tar.xz)   tar xJf "$1"     ;;
+            *.bz2)      bunzip2 "$1"     ;;
+            *.rar)      unrar x "$1"     ;;
+            *.gz)       gunzip "$1"      ;;
+            *.tar)      tar xf "$1"      ;;
+            *.tbz2)     tar xjf "$1"     ;;
+            *.tgz)      tar xzf "$1"     ;;
+            *.zip)      unzip "$1"       ;;
+            *.Z)        uncompress "$1"  ;;
+            *.7z)       7z x "$1"        ;;
+            *.zst)      unzstd "$1"      ;;
+            *)          echo "'$1' cannot be extracted" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
+}
+
+# SSH to a host and show system info
+sshinfo() {
+    ssh "$@" 'echo "=== $(hostname) ===" && uname -a && echo && uptime && echo && free -h 2>/dev/null && echo && df -h / 2>/dev/null'
+}
+
+# Quick port check
+portcheck() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: portcheck <host> <port>"
+        return 1
+    fi
+    nc -zv -w3 "$1" "$2" 2>&1
+}
+
+# Find large files
+findlarge() {
+    local size="${1:-100M}"
+    find . -type f -size +${size} -exec ls -lh {} \; 2>/dev/null | sort -k5 -h
+}
+
+# Docker shell into a container
+dsh() {
+    docker exec -it "$1" /bin/bash 2>/dev/null || docker exec -it "$1" /bin/sh
+}
+
+# Watch docker compose logs
+dcwatch() {
+    docker compose logs -f --tail 50 "$@"
+}
+
+# ─── Machine-specific overrides ──────────────────────────────────
+# Create ~/.shellrc.local for per-machine settings not in the repo
+if [ -f ~/.shellrc.local ]; then
+    . ~/.shellrc.local
+fi

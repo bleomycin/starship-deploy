@@ -1,0 +1,300 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  Starship Prompt — Sysadmin Edition (2025)                     ║
+# ║  Portable: macOS / Debian / Fedora                             ║
+# ║  Color palette: One Half Dark                                   ║
+# ║  https://starship.rs/config/                                   ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# One Half Dark palette reference:
+#   Red      #e06c75    Green    #98c379    Yellow   #e5c07b
+#   Blue     #61afef    Magenta  #c678dd    Cyan     #56b6c2
+#   Orange   #d19a66    White    #dcdfe4    Comment  #5c6370
+#   Bg       #282c34    Gutter   #636d83
+
+command_timeout = 1000
+add_newline = true
+
+# ─── Prompt format ────────────────────────────────────────────────
+format = """
+$os\
+$username\
+$hostname\
+$localip\
+$directory\
+$git_branch\
+$git_status\
+$git_state\
+$docker_context\
+$container\
+$python\
+$nodejs\
+$rust\
+$golang\
+$lua\
+$package\
+$jobs\
+$status\
+$line_break\
+$character"""
+
+right_format = ""
+
+# ─── Prompt character ────────────────────────────────────────────
+[character]
+success_symbol = "[❯](bold #98c379)"
+error_symbol = "[❯](bold #e06c75)"
+vimcmd_symbol = "[❮](bold #56b6c2)"
+
+# ─── OS icon ──────────────────────────────────────────────────────
+[os]
+disabled = false
+style = "#dcdfe4"
+
+[os.symbols]
+Macos = " "
+Linux = " "
+Debian = " "
+Fedora = " "
+Ubuntu = " "
+Arch = " "
+CentOS = " "
+Raspbian = " "
+Alpine = " "
+RedHatEnterprise = " "
+
+# ─── Username ─────────────────────────────────────────────────────
+[username]
+show_always = false
+style_user = "bold #61afef"
+style_root = "bold #e06c75"
+format = "[$user]($style)"
+
+# ─── Hostname ─────────────────────────────────────────────────────
+[hostname]
+ssh_only = true
+style = "bold #d19a66"
+format = "[@$hostname]($style) "
+ssh_symbol = " "
+trim_at = "."
+
+# ─── Local IP ─────────────────────────────────────────────────────
+[localip]
+ssh_only = true
+disabled = false
+style = "#5c6370"
+format = "[($localipv4)]($style) "
+
+# ─── Directory ────────────────────────────────────────────────────
+[directory]
+truncation_length = 8
+truncation_symbol = "…/"
+truncate_to_repo = false
+read_only = " 󰌾"
+read_only_style = "bold #e06c75"
+style = "bold #61afef"
+format = "[$read_only]($read_only_style)[$path]($style) "
+
+# ─── Git branch ──────────────────────────────────────────────────
+[git_branch]
+symbol = " "
+style = "bold #c678dd"
+format = "[$symbol$branch(:$remote_branch)]($style) "
+truncation_length = 30
+
+# ─── Git status ──────────────────────────────────────────────────
+[git_status]
+style = "bold #e06c75"
+format = '([$all_status$ahead_behind]($style) )'
+conflicted = " "
+ahead = "⇡${count} "
+behind = "⇣${count} "
+diverged = "⇕⇡${ahead_count}⇣${behind_count} "
+untracked = "?${count} "
+stashed = " "
+modified = "!${count} "
+staged = "+${count} "
+renamed = "»${count} "
+deleted = "✘${count} "
+
+[git_state]
+format = '[\($state( $progress_current/$progress_total)\)]($style) '
+style = "bold #e5c07b"
+
+# ─── Docker context ──────────────────────────────────────────────
+[docker_context]
+symbol = " "
+style = "#61afef"
+format = "[$symbol$context]($style) "
+only_with_files = true
+detect_files = ["docker-compose.yml", "docker-compose.yaml", "Dockerfile", "compose.yml", "compose.yaml"]
+detect_folders = []
+
+# ─── Container (shows when inside docker/podman/lxc) ─────────────
+[container]
+symbol = "⬡ "
+style = "#d19a66"
+format = "[$symbol$name]($style) "
+
+# ─── Language environments (only shown when relevant files exist) ─
+[python]
+symbol = " "
+style = "#e5c07b"
+format = "[$symbol$version( \\($virtualenv\\))]($style) "
+detect_extensions = ["py"]
+detect_files = ["requirements.txt", "pyproject.toml", "Pipfile", ".python-version"]
+
+[nodejs]
+symbol = " "
+style = "#98c379"
+format = "[$symbol$version]($style) "
+detect_extensions = ["js", "ts", "mjs"]
+detect_files = ["package.json", ".node-version"]
+
+[rust]
+symbol = "🦀 "
+style = "#d19a66"
+format = "[$symbol$version]($style) "
+
+[golang]
+symbol = " "
+style = "#56b6c2"
+format = "[$symbol$version]($style) "
+
+[lua]
+symbol = " "
+style = "#61afef"
+format = "[$symbol$version]($style) "
+
+[package]
+symbol = "📦 "
+style = "#d19a66"
+format = "[$symbol$version]($style) "
+display_private = false
+
+# ─── Command duration ────────────────────────────────────────────
+[cmd_duration]
+disabled = true
+
+# ─── Background jobs ─────────────────────────────────────────────
+[jobs]
+symbol = " "
+style = "#56b6c2"
+threshold = 1
+format = "[$symbol$number]($style) "
+
+# ─── Exit status ──────────────────────────────────────────────────
+[status]
+disabled = false
+symbol = "✘"
+style = "bold #e06c75"
+format = "[$symbol $status( \\($common_meaning\\))]($style) "
+map_symbol = true
+recognize_signal_code = true
+
+# ─── Time ─────────────────────────────────────────────────────────
+[time]
+disabled = true
+
+# ─── Battery ──────────────────────────────────────────────────────
+[battery]
+disabled = true
+
+# ─── Modules explicitly disabled ─────────────────────────────────
+[aws]
+disabled = true
+
+[gcloud]
+disabled = true
+
+[azure]
+disabled = true
+
+[kubernetes]
+disabled = true
+
+[terraform]
+disabled = true
+
+[vagrant]
+disabled = true
+
+[nix_shell]
+disabled = true
+
+[conda]
+disabled = true
+
+[java]
+disabled = true
+
+[ruby]
+disabled = true
+
+[php]
+disabled = true
+
+[perl]
+disabled = true
+
+[swift]
+disabled = true
+
+[kotlin]
+disabled = true
+
+[dart]
+disabled = true
+
+[elixir]
+disabled = true
+
+[elm]
+disabled = true
+
+[erlang]
+disabled = true
+
+[haskell]
+disabled = true
+
+[julia]
+disabled = true
+
+[nim]
+disabled = true
+
+[ocaml]
+disabled = true
+
+[zig]
+disabled = true
+
+[vlang]
+disabled = true
+
+[scala]
+disabled = true
+
+[crystal]
+disabled = true
+
+[buf]
+disabled = true
+
+[cmake]
+disabled = true
+
+[meson]
+disabled = true
+
+[spack]
+disabled = true
+
+[memory_usage]
+disabled = true
+
+[env_var]
+disabled = true
+
+[sudo]
+disabled = true

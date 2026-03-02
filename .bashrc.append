@@ -1,0 +1,42 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  Bash additions — appended to system .bashrc                    ║
+# ║  Loads shared config + fzf + starship for bash                  ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+# ─── Shared config (aliases, functions, tool init) ────────────────
+[ -f ~/.shellrc.common ] && . ~/.shellrc.common
+
+# ─── Bash history (mirrors the ZSH history behavior) ─────────────
+HISTSIZE=50000
+HISTFILESIZE=50000
+HISTCONTROL=ignoreboth:erasedups    # No dupes, no leading-space cmds
+HISTTIMEFORMAT="%F %T  "            # Timestamps in history
+shopt -s histappend                  # Append, don't overwrite
+PROMPT_COMMAND="history -a; history -c; history -r; ${PROMPT_COMMAND:-}"  # Share across sessions
+
+# ─── Bash options ─────────────────────────────────────────────────
+shopt -s autocd 2>/dev/null          # Type dir name to cd (bash 4+)
+shopt -s cdspell                     # Correct minor cd typos
+shopt -s dirspell 2>/dev/null        # Correct dir typos in completion
+shopt -s checkwinsize                # Update LINES/COLUMNS after resize
+shopt -s globstar 2>/dev/null        # ** recursive glob (bash 4+)
+shopt -s nocaseglob                  # Case-insensitive globbing
+shopt -s cmdhist                     # Multi-line cmds as one history entry
+
+# ─── fzf shell integration (Bash-specific keybindings) ────────────
+if command -v fzf >/dev/null 2>&1; then
+    if fzf --bash >/dev/null 2>&1; then
+        eval "$(fzf --bash)"
+    elif [ -f /usr/share/fzf/key-bindings.bash ]; then
+        . /usr/share/fzf/key-bindings.bash
+        . /usr/share/fzf/completion.bash
+    elif [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+        . /usr/share/doc/fzf/examples/key-bindings.bash
+        . /usr/share/doc/fzf/examples/completion.bash
+    fi
+fi
+
+# ─── Starship prompt ─────────────────────────────────────────────
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+fi
