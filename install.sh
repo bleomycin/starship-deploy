@@ -379,9 +379,11 @@ install_zsh_shell() {
     as_root chsh -s "$ZSH_PATH" "$CURRENT_USER"
     success "Default shell for $CURRENT_USER → $ZSH_PATH"
 
-    info "Setting default shell to $ZSH_PATH for root..."
-    as_root chsh -s "$ZSH_PATH" root
-    success "Default shell for root → $ZSH_PATH"
+    if [[ "$CURRENT_USER" != "root" ]]; then
+        info "Setting default shell to $ZSH_PATH for root..."
+        as_root chsh -s "$ZSH_PATH" root
+        success "Default shell for root → $ZSH_PATH"
+    fi
 
     DEFAULT_SHELL="zsh"
 }
@@ -583,7 +585,13 @@ if [[ "$OS" == "Linux" && "$DEFAULT_SHELL" != "zsh" ]]; then
         install_zsh_shell
     else
         echo ""
-        read -rp "Install zsh and set as default shell for $CURRENT_USER and root? [y/N] " zsh_answer
+        local ZSH_PROMPT="Install zsh and set as default shell"
+        if [[ "$CURRENT_USER" == "root" ]]; then
+            ZSH_PROMPT+=" for root? [y/N] "
+        else
+            ZSH_PROMPT+=" for $CURRENT_USER and root? [y/N] "
+        fi
+        read -rp "$ZSH_PROMPT" zsh_answer
         if [[ "$zsh_answer" =~ ^[Yy] ]]; then
             install_zsh_shell
         fi
