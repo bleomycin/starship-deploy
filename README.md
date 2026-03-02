@@ -2,9 +2,9 @@
 
 A portable, modern terminal configuration built around **Starship** prompt and a curated set of modern CLI tools. Designed for sysadmin workflows: SSH, Docker, directory navigation, and general server management.
 
-Works on: **macOS** (zsh) · **Debian/Ubuntu** (bash) · **Fedora/RHEL** (bash)
+Works on: **macOS** (zsh) · **Debian/Ubuntu** (bash/zsh) · **Fedora/RHEL** (bash/zsh)
 
-Uses whatever shell the system ships with — no need to install zsh on Linux.
+Uses whatever shell the system ships with. On Linux, optionally install zsh and set it as default with `--zsh`.
 
 ---
 
@@ -41,8 +41,8 @@ The installer detects your default shell. On macOS (zsh), it deploys `.zshrc` wi
 ## Quick Start: macOS + iTerm2
 
 ```bash
-git clone https://github.com/YOURUSER/terminal-setup.git ~/terminal-setup
-cd ~/terminal-setup
+git clone https://github.com/bleomycin/starship-deploy.git ~/starship-deploy
+cd ~/starship-deploy
 bash install.sh
 ```
 
@@ -58,9 +58,17 @@ Restart your shell:
 exec zsh
 ```
 
+### Color theme
+
+This setup uses the **One Half Dark** color palette. To apply it in iTerm2:
+
+1. Browse themes at [iterm2colorschemes.com](https://iterm2colorschemes.com) and download **One Half Dark** (or any theme you prefer)
+2. In iTerm2: **Settings → Profiles → Colors → Color Presets... → Import...**
+3. Select the downloaded `.itermcolors` file
+4. Choose **One Half Dark** from the Color Presets dropdown
+
 ### Optional iTerm2 tweaks
 
-- **Colors**: Import [Catppuccin](https://github.com/catppuccin/iterm) or [Tokyo Night](https://github.com/enkia/tokyo-night-iterm2) for a nicer palette
 - **Scrollback**: Profiles → Terminal → Check "Unlimited scrollback"
 
 ---
@@ -68,9 +76,8 @@ exec zsh
 ## Deploying on Remote Linux Servers
 
 ```bash
-scp -r ~/terminal-setup user@server:~/terminal-setup
-ssh user@server
-cd ~/terminal-setup
+git clone https://github.com/bleomycin/starship-deploy.git ~/starship-deploy
+cd ~/starship-deploy
 bash install.sh
 exec bash
 ```
@@ -151,18 +158,8 @@ command_timeout = 2000
 disabled = true
 ```
 
-### Pushing to GitHub
-
-```bash
-cd ~/terminal-setup
-git init
-git add -A
-git commit -m "Initial terminal setup"
-gh repo create terminal-setup --public --source=. --push
-```
-
 ### Updating
 
 ```bash
-cd ~/terminal-setup && git pull && bash install.sh && exec $SHELL
+cd ~/starship-deploy && git pull && bash install.sh && exec $SHELL
 ```
