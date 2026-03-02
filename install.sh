@@ -102,6 +102,7 @@ install_debian() {
         curl \
         wget \
         git \
+        gpg \
         jq \
         tree \
         ncdu \
