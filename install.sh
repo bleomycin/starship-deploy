@@ -86,7 +86,10 @@ install_macos() {
         ncdu \
         tlrc \
         sshs \
-        midnight-commander
+        midnight-commander \
+        gping \
+        doggo \
+        viddy
 
     success "All Homebrew packages installed"
 }
@@ -195,6 +198,53 @@ install_debian() {
             else
                 warn "sshs: download failed, install manually"
             fi
+        fi
+    fi
+
+    # gping
+    if ! command -v gping &>/dev/null; then
+        info "Installing gping..."
+        if ! as_root apt install -y gping 2>/dev/null; then
+            local ARCH=$(uname -m)
+            [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+            wget -qO /tmp/gping.tar.gz "https://github.com/orf/gping/releases/latest/download/gping-Linux-gnu-${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/gping.tar.gz
+            if [[ -s /tmp/gping.tar.gz ]]; then
+                tar xzf /tmp/gping.tar.gz -C /tmp
+                as_root mv /tmp/gping /usr/local/bin/
+                rm /tmp/gping.tar.gz
+            else
+                warn "gping: download failed, install manually"
+            fi
+        fi
+    fi
+
+    # doggo
+    if ! command -v doggo &>/dev/null; then
+        info "Installing doggo..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        wget -qO /tmp/doggo.tar.gz "https://github.com/mr-karan/doggo/releases/download/v1.1.5/doggo_1.1.5_Linux_${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/doggo.tar.gz
+        if [[ -s /tmp/doggo.tar.gz ]]; then
+            tar xzf /tmp/doggo.tar.gz -C /tmp doggo
+            as_root mv /tmp/doggo /usr/local/bin/
+            rm /tmp/doggo.tar.gz
+        else
+            warn "doggo: download failed, install manually"
+        fi
+    fi
+
+    # viddy
+    if ! command -v viddy &>/dev/null; then
+        info "Installing viddy..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        wget -qO /tmp/viddy.tar.gz "https://github.com/sachaos/viddy/releases/download/v1.3.0/viddy-v1.3.0-linux-${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/viddy.tar.gz
+        if [[ -s /tmp/viddy.tar.gz ]]; then
+            tar xzf /tmp/viddy.tar.gz -C /tmp viddy
+            as_root mv /tmp/viddy /usr/local/bin/
+            rm /tmp/viddy.tar.gz
+        else
+            warn "viddy: download failed, install manually"
         fi
     fi
 
@@ -337,6 +387,53 @@ install_fedora() {
             else
                 warn "sshs: download failed, install manually"
             fi
+        fi
+    fi
+
+    # gping
+    if ! command -v gping &>/dev/null; then
+        info "Installing gping..."
+        if ! as_root dnf install -y gping 2>/dev/null; then
+            local ARCH=$(uname -m)
+            [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+            wget -qO /tmp/gping.tar.gz "https://github.com/orf/gping/releases/latest/download/gping-Linux-gnu-${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/gping.tar.gz
+            if [[ -s /tmp/gping.tar.gz ]]; then
+                tar xzf /tmp/gping.tar.gz -C /tmp
+                as_root mv /tmp/gping /usr/local/bin/
+                rm /tmp/gping.tar.gz
+            else
+                warn "gping: download failed, install manually"
+            fi
+        fi
+    fi
+
+    # doggo
+    if ! command -v doggo &>/dev/null; then
+        info "Installing doggo..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        wget -qO /tmp/doggo.tar.gz "https://github.com/mr-karan/doggo/releases/download/v1.1.5/doggo_1.1.5_Linux_${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/doggo.tar.gz
+        if [[ -s /tmp/doggo.tar.gz ]]; then
+            tar xzf /tmp/doggo.tar.gz -C /tmp doggo
+            as_root mv /tmp/doggo /usr/local/bin/
+            rm /tmp/doggo.tar.gz
+        else
+            warn "doggo: download failed, install manually"
+        fi
+    fi
+
+    # viddy
+    if ! command -v viddy &>/dev/null; then
+        info "Installing viddy..."
+        local ARCH=$(uname -m)
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        wget -qO /tmp/viddy.tar.gz "https://github.com/sachaos/viddy/releases/download/v1.3.0/viddy-v1.3.0-linux-${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/viddy.tar.gz
+        if [[ -s /tmp/viddy.tar.gz ]]; then
+            tar xzf /tmp/viddy.tar.gz -C /tmp viddy
+            as_root mv /tmp/viddy /usr/local/bin/
+            rm /tmp/viddy.tar.gz
+        else
+            warn "viddy: download failed, install manually"
         fi
     fi
 

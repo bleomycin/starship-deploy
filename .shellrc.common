@@ -149,6 +149,29 @@ alias dprune='docker system prune -af --volumes'
 alias dstats='docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"'
 alias dvol='docker volume ls'
 
+# --- Systemd (Linux only) ---------------------------------------------
+if command -v systemctl >/dev/null 2>&1; then
+    alias sc='systemctl'
+    alias scs='systemctl status'
+    alias scr='systemctl restart'
+    alias scstart='systemctl start'
+    alias scstop='systemctl stop'
+    alias sce='systemctl enable'
+    alias scd='systemctl disable'
+    alias scdr='systemctl daemon-reload'
+    alias scls='systemctl list-units --type=service'
+    alias scfailed='systemctl --failed'
+fi
+
+# --- Journalctl (Linux only) -----------------------------------------
+if command -v journalctl >/dev/null 2>&1; then
+    alias jlog='journalctl -u'
+    alias jlogf='journalctl -fu'
+    alias jlogt='journalctl -u --since today'
+    alias jlogerr='journalctl -p err -b'
+    alias jlogboot='journalctl -b'
+fi
+
 # --- Network ----------------------------------------------------------
 alias ports='ss -tulnp 2>/dev/null || netstat -tulnp'
 alias myip='curl -s ifconfig.me && echo'
@@ -233,6 +256,15 @@ dcwatch() {
     docker compose logs -f --tail 50 "$@"
 }
 
+# Kill process(es) on a given port
+killport() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: killport <port>"
+        return 1
+    fi
+    lsof -ti :"$1" | xargs kill -9 2>/dev/null && echo "Killed processes on port $1" || echo "No process found on port $1"
+}
+
 # --- Cheat sheet ------------------------------------------------------
 help() {
     cat << 'HELPEOF'
@@ -310,6 +342,28 @@ help() {
     localip         Show local/LAN IP address
     pingg           Ping 1.1.1.1 x5 (quick connectivity test)
     portcheck H P   Test if host:port is open
+    gping <host>    Ping with a live graph in the terminal
+    doggo <domain>  Modern DNS client (A, AAAA, MX, etc.)
+    viddy <cmd>     Modern watch — runs command repeatedly with diff
+
+  SYSTEMD (Linux only)
+  ====================
+    sc              systemctl
+    scs <svc>       systemctl status <service>
+    scr <svc>       systemctl restart <service>
+    scstart <svc>   systemctl start <service>
+    scstop <svc>    systemctl stop <service>
+    sce <svc>       systemctl enable <service>
+    scd <svc>       systemctl disable <service>
+    scdr            systemctl daemon-reload
+    scls            List all service units
+    scfailed        List failed units
+    jlog <svc>      journalctl for a service
+    jlogf <svc>     journalctl follow (live tail)
+    jlogt <svc>     journalctl since today
+    jlogerr         Errors from current boot
+    jlogboot        All logs from current boot
+    killport <port> Kill process(es) listening on a port
 
   FILE OPERATIONS
   ===============
