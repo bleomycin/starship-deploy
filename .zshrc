@@ -54,6 +54,9 @@ zstyle ':completion:*:ssh:*' hosts $(
 zstyle ':completion:*:scp:*' hosts $(
     [ -f ~/.ssh/config ] && grep -i '^Host ' ~/.ssh/config | awk '{print $2}' | grep -v '[*?]'
 )
+zstyle ':completion:*:rsync:*' hosts $(
+    [ -f ~/.ssh/config ] && grep -i '^Host ' ~/.ssh/config | awk '{print $2}' | grep -v '[*?]'
+)
 
 # ─── Key bindings ─────────────────────────────────────────────────
 bindkey -e

@@ -137,6 +137,38 @@ alias sshk='ssh-keygen -t ed25519 -C'
 alias sshfp='ssh-keygen -l -f'
 alias sshcopy='ssh-copy-id -i ~/.ssh/id_ed25519.pub'
 
+# --- SCP helpers ------------------------------------------------------
+# fzf-pick a host from ssh config, then scp
+scpto() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: scpto <local-file> [remote-path]"
+        return 1
+    fi
+    if ! command -v fzf >/dev/null 2>&1; then
+        echo "scpto requires fzf"
+        return 1
+    fi
+    local host
+    host=$(grep -i '^Host ' ~/.ssh/config 2>/dev/null | awk '{print $2}' | grep -v '[*?]' | fzf --height=40% --reverse --prompt="SCP to host> ") || return 1
+    local remote="${2:-~}"
+    scp -r "$1" "${host}:${remote}"
+}
+
+scpfrom() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: scpfrom <remote-path> [local-path]"
+        return 1
+    fi
+    if ! command -v fzf >/dev/null 2>&1; then
+        echo "scpfrom requires fzf"
+        return 1
+    fi
+    local host
+    host=$(grep -i '^Host ' ~/.ssh/config 2>/dev/null | awk '{print $2}' | grep -v '[*?]' | fzf --height=40% --reverse --prompt="SCP from host> ") || return 1
+    local local_path="${2:-.}"
+    scp -r "${host}:${1}" "$local_path"
+}
+
 # --- Docker shortcuts -------------------------------------------------
 alias d='docker'
 alias dc='docker compose'
@@ -319,6 +351,10 @@ help() {
     sshfp <file>    Show key fingerprint
     sshinfo <host>  SSH + print hostname, uptime, memory, disk
     sshconf         Open ~/.ssh/config in editor
+    scpto <f> [p]   SCP file to host (fzf-pick host, optional remote path)
+    scpfrom <p> [l] SCP file from host (fzf-pick host, optional local path)
+    scp host:<TAB>  Tab-completes remote paths (ZSH + SSH keys)
+    rsync host:<TAB> Same tab completion for rsync
 
   DOCKER
   ======
