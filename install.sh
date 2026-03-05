@@ -19,6 +19,8 @@ warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail()    { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_TRACKING_DIR="$HOME/.config/starship-deploy/deployed"
+BASHRC_MARKER="# ── Terminal setup (added by install.sh) ──"
 
 # ─── Privilege helper (sudo when needed, direct when root) ──────
 as_root() {
@@ -31,9 +33,11 @@ as_root() {
 
 # ─── Parse flags ────────────────────────────────────────────────
 INSTALL_ZSH=""
+UPGRADE_MODE=""
 for arg in "$@"; do
     case "$arg" in
         --zsh) INSTALL_ZSH=1 ;;
+        --upgrade) UPGRADE_MODE=1 ;;
     esac
 done
 
@@ -509,6 +513,89 @@ install_zsh_plugins() {
     success "ZSH plugins installed"
 }
 
+# ─── Portable sed -i (BSD macOS vs GNU Linux) ────────────────────
+sed_inplace() {
+    if [[ "$OS" == "Darwin" ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
+# ─── Save a copy to the deploy tracking directory ────────────────
+save_deployed() {
+    local src="$1"
+    local basename="$2"
+    mkdir -p "$DEPLOY_TRACKING_DIR"
+    cp "$src" "$DEPLOY_TRACKING_DIR/$basename"
+}
+
+# ─── Update ZSH plugins via git ──────────────────────────────────
+update_plugins() {
+    info "Updating ZSH plugins..."
+    local plugin_dir="$HOME/.zsh/plugins"
+    if [[ ! -d "$plugin_dir" ]]; then
+        warn "No plugins directory found — skipping plugin update"
+        return
+    fi
+
+    local updated=0
+    local failed=0
+    for dir in "$plugin_dir"/*/; do
+        [[ ! -d "$dir/.git" ]] && continue
+        local name
+        name=$(basename "$dir")
+        info "  Updating $name..."
+
+        # Detect default branch
+        local default_branch
+        default_branch=$(git -C "$dir" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||') || true
+        if [[ -z "$default_branch" ]]; then
+            default_branch=$(git -C "$dir" remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') || true
+        fi
+        [[ -z "$default_branch" ]] && default_branch="master"
+
+        # Try fetch + fast-forward
+        if git -C "$dir" fetch --depth=1 origin "$default_branch" 2>/dev/null; then
+            if git -C "$dir" merge --ff-only "origin/$default_branch" 2>/dev/null; then
+                success "  $name updated"
+                ((updated++)) || true
+            else
+                # Fast-forward failed — re-clone
+                warn "  $name: fast-forward failed, re-cloning..."
+                local remote_url
+                remote_url=$(git -C "$dir" remote get-url origin 2>/dev/null)
+                if [[ -n "$remote_url" ]]; then
+                    rm -rf "$dir"
+                    if git clone --depth=1 "$remote_url" "$dir" 2>/dev/null; then
+                        success "  $name re-cloned"
+                        ((updated++)) || true
+                    else
+                        warn "  $name: re-clone failed"
+                        ((failed++)) || true
+                    fi
+                else
+                    warn "  $name: no remote URL, skipping"
+                    ((failed++)) || true
+                fi
+            fi
+        else
+            warn "  $name: fetch failed, skipping"
+            ((failed++)) || true
+        fi
+    done
+
+    if ((updated > 0)); then
+        success "$updated plugin(s) updated"
+    fi
+    if ((failed > 0)); then
+        warn "$failed plugin(s) had errors (non-fatal)"
+    fi
+    if ((updated == 0 && failed == 0)); then
+        info "All plugins already up to date"
+    fi
+}
+
 # ─── Diff helper: show meaningful custom lines in existing config ─
 # Filters out comments, blank lines, and common boilerplate
 show_custom_lines() {
@@ -549,6 +636,393 @@ show_custom_lines() {
     return 0
 }
 
+# ─── Smart deploy: three-way merge for config files ──────────────
+smart_deploy() {
+    local repo_file="$1"
+    local dest="$2"
+    local basename="$3"
+    local deployed="$DEPLOY_TRACKING_DIR/$basename"
+
+    # No destination file — fresh deploy
+    if [[ ! -f "$dest" ]]; then
+        cp "$repo_file" "$dest"
+        save_deployed "$repo_file" "$basename"
+        success "$basename → $dest (fresh deploy)"
+        return
+    fi
+
+    # No baseline — first upgrade run
+    if [[ ! -f "$deployed" ]]; then
+        if diff -q "$dest" "$repo_file" &>/dev/null; then
+            # Files match — create baseline, nothing to do
+            save_deployed "$repo_file" "$basename"
+            info "$basename: already up to date (baseline created)"
+            return
+        else
+            # Files differ, no baseline — enter conflict resolution
+            warn "$basename: no upgrade baseline found, files differ"
+            resolve_conflict "$repo_file" "$dest" "" "$basename"
+            return
+        fi
+    fi
+
+    # Has baseline — apply three-way truth table
+    local repo_changed="" user_changed=""
+    if ! diff -q "$deployed" "$repo_file" &>/dev/null; then
+        repo_changed=1
+    fi
+    if ! diff -q "$deployed" "$dest" &>/dev/null; then
+        user_changed=1
+    fi
+
+    if [[ -z "$repo_changed" && -z "$user_changed" ]]; then
+        info "$basename: already up to date"
+    elif [[ -n "$repo_changed" && -z "$user_changed" ]]; then
+        cp "$dest" "${dest}.bak"
+        cp "$repo_file" "$dest"
+        save_deployed "$repo_file" "$basename"
+        success "$basename: updated (backup saved to ${dest}.bak)"
+    elif [[ -z "$repo_changed" && -n "$user_changed" ]]; then
+        info "$basename: repo unchanged, keeping your modifications"
+    else
+        # Both changed
+        warn "$basename: both you and upstream have changes"
+        resolve_conflict "$repo_file" "$dest" "$deployed" "$basename"
+    fi
+}
+
+# ─── Interactive conflict resolution ─────────────────────────────
+resolve_conflict() {
+    local repo_file="$1"
+    local dest="$2"
+    local deployed="$3"  # empty string if no baseline
+    local label="$4"
+
+    while true; do
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        printf "║  Conflict: %-49s║\n" "$label"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "  [d] Show diff (your file vs upstream)"
+        echo "  [s] Side-by-side diff"
+        echo "  [m] Auto-merge via git merge-file"
+        echo "  [k] Keep mine (skip upstream)"
+        echo "  [u] Use upstream (backup yours to .bak)"
+        echo "  [e] Open in editor for manual merge"
+        echo ""
+        read -rp "Choose action: " choice
+
+        case "$choice" in
+            d)
+                echo ""
+                diff -u "$dest" "$repo_file" || true
+                echo ""
+                ;;
+            s)
+                echo ""
+                diff -y --width=120 "$dest" "$repo_file" || true
+                echo ""
+                ;;
+            m)
+                if [[ -z "$deployed" ]]; then
+                    warn "No baseline available — cannot do three-way merge"
+                    warn "Use [d] to view diff, then [e] to edit manually"
+                    continue
+                fi
+                local tmp_merge
+                tmp_merge=$(mktemp)
+                cp "$dest" "$tmp_merge"
+                if git merge-file "$tmp_merge" "$deployed" "$repo_file" 2>/dev/null; then
+                    cp "$dest" "${dest}.bak"
+                    cp "$tmp_merge" "$dest"
+                    save_deployed "$repo_file" "$label"
+                    rm -f "$tmp_merge"
+                    success "$label: clean merge applied (backup saved)"
+                    return
+                else
+                    # Merge has conflicts
+                    warn "Merge has conflict markers — opening in editor for review"
+                    cp "$dest" "${dest}.bak"
+                    cp "$tmp_merge" "$dest"
+                    rm -f "$tmp_merge"
+                    "${EDITOR:-vi}" "$dest"
+                    # Check for remaining conflict markers
+                    if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$dest" 2>/dev/null; then
+                        warn "Conflict markers still present in $label — resolve manually"
+                    else
+                        save_deployed "$repo_file" "$label"
+                        success "$label: merge resolved"
+                    fi
+                    return
+                fi
+                ;;
+            k)
+                info "$label: keeping your version (upstream skipped)"
+                # Do NOT update baseline — user re-prompted on next upstream change
+                return
+                ;;
+            u)
+                cp "$dest" "${dest}.bak"
+                cp "$repo_file" "$dest"
+                save_deployed "$repo_file" "$label"
+                success "$label: updated to upstream (backup saved)"
+                return
+                ;;
+            e)
+                cp "$dest" "${dest}.bak"
+                cp "$repo_file" "$dest"
+                "${EDITOR:-vi}" "$dest"
+                save_deployed "$repo_file" "$label"
+                success "$label: manually edited (backup saved)"
+                return
+                ;;
+            *)
+                warn "Invalid choice. Please select d, s, m, k, u, or e."
+                ;;
+        esac
+    done
+}
+
+# ─── Smart deploy for .bashrc block ──────────────────────────────
+smart_deploy_bash() {
+    local repo_file="$SCRIPT_DIR/.bashrc.append"
+    local dest="$HOME/.bashrc"
+    local basename="bashrc_block"
+    local deployed="$DEPLOY_TRACKING_DIR/$basename"
+    local marker_escaped
+    marker_escaped=$(printf '%s' "$BASHRC_MARKER" | sed 's/[[\.*^$/]/\\&/g')
+
+    # No .bashrc — create with config block
+    if [[ ! -f "$dest" ]]; then
+        echo "" >> "$dest"
+        echo "$BASHRC_MARKER" >> "$dest"
+        cat "$repo_file" >> "$dest"
+        save_deployed "$repo_file" "$basename"
+        success ".bashrc: created with config block"
+        return
+    fi
+
+    # Check if marker exists
+    if ! grep -qF "$BASHRC_MARKER" "$dest"; then
+        # No marker — append fresh block
+        cp "$dest" "${dest}.bak"
+        echo "" >> "$dest"
+        echo "$BASHRC_MARKER" >> "$dest"
+        cat "$repo_file" >> "$dest"
+        save_deployed "$repo_file" "$basename"
+        success ".bashrc: config block appended (backup saved)"
+        return
+    fi
+
+    # Extract current block (everything after marker to EOF)
+    local current_block
+    current_block=$(sed -n "/^${marker_escaped}$/,\$p" "$dest" | tail -n +2)
+
+    local new_block
+    new_block=$(cat "$repo_file")
+
+    # No baseline — first upgrade
+    if [[ ! -f "$deployed" ]]; then
+        if [[ "$current_block" == "$new_block" ]]; then
+            save_deployed "$repo_file" "$basename"
+            info ".bashrc block: already up to date (baseline created)"
+            return
+        else
+            warn ".bashrc block: no upgrade baseline found, blocks differ"
+            # Show diff and ask
+            local tmp_current tmp_new
+            tmp_current=$(mktemp)
+            tmp_new=$(mktemp)
+            echo "$current_block" > "$tmp_current"
+            echo "$new_block" > "$tmp_new"
+            echo ""
+            diff -u --label "current .bashrc block" --label "upstream .bashrc.append" "$tmp_current" "$tmp_new" || true
+            echo ""
+            read -rp ".bashrc block: [k]eep yours / [u]se upstream / [e]dit? " choice
+            case "$choice" in
+                u)
+                    cp "$dest" "${dest}.bak"
+                    sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+                    echo "$BASHRC_MARKER" >> "$dest"
+                    cat "$repo_file" >> "$dest"
+                    save_deployed "$repo_file" "$basename"
+                    success ".bashrc block: updated to upstream (backup saved)"
+                    ;;
+                e)
+                    cp "$dest" "${dest}.bak"
+                    "${EDITOR:-vi}" "$dest"
+                    save_deployed "$repo_file" "$basename"
+                    success ".bashrc block: manually edited (backup saved)"
+                    ;;
+                *)
+                    info ".bashrc block: keeping your version"
+                    ;;
+            esac
+            rm -f "$tmp_current" "$tmp_new"
+            return
+        fi
+    fi
+
+    # Has baseline — apply truth table
+    local deployed_block
+    deployed_block=$(cat "$deployed")
+
+    local repo_changed="" user_changed=""
+    if [[ "$deployed_block" != "$new_block" ]]; then
+        repo_changed=1
+    fi
+    if [[ "$deployed_block" != "$current_block" ]]; then
+        user_changed=1
+    fi
+
+    if [[ -z "$repo_changed" && -z "$user_changed" ]]; then
+        info ".bashrc block: already up to date"
+    elif [[ -n "$repo_changed" && -z "$user_changed" ]]; then
+        cp "$dest" "${dest}.bak"
+        sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+        echo "$BASHRC_MARKER" >> "$dest"
+        cat "$repo_file" >> "$dest"
+        save_deployed "$repo_file" "$basename"
+        success ".bashrc block: updated (backup saved)"
+    elif [[ -z "$repo_changed" && -n "$user_changed" ]]; then
+        info ".bashrc block: repo unchanged, keeping your modifications"
+    else
+        warn ".bashrc block: both you and upstream have changes"
+        local tmp_current tmp_new tmp_deployed
+        tmp_current=$(mktemp)
+        tmp_new=$(mktemp)
+        tmp_deployed=$(mktemp)
+        echo "$current_block" > "$tmp_current"
+        echo "$new_block" > "$tmp_new"
+        echo "$deployed_block" > "$tmp_deployed"
+        echo ""
+        diff -u --label "current .bashrc block" --label "upstream .bashrc.append" "$tmp_current" "$tmp_new" || true
+        echo ""
+        read -rp ".bashrc block: [m]erge / [k]eep yours / [u]se upstream / [e]dit? " choice
+        case "$choice" in
+            m)
+                local tmp_merge
+                tmp_merge=$(mktemp)
+                cp "$tmp_current" "$tmp_merge"
+                if git merge-file "$tmp_merge" "$tmp_deployed" "$tmp_new" 2>/dev/null; then
+                    cp "$dest" "${dest}.bak"
+                    sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+                    echo "$BASHRC_MARKER" >> "$dest"
+                    cat "$tmp_merge" >> "$dest"
+                    save_deployed "$repo_file" "$basename"
+                    rm -f "$tmp_merge"
+                    success ".bashrc block: clean merge applied (backup saved)"
+                else
+                    warn "Merge has conflict markers — opening in editor"
+                    cp "$dest" "${dest}.bak"
+                    sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+                    echo "$BASHRC_MARKER" >> "$dest"
+                    cat "$tmp_merge" >> "$dest"
+                    rm -f "$tmp_merge"
+                    "${EDITOR:-vi}" "$dest"
+                    if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$dest" 2>/dev/null; then
+                        warn "Conflict markers still present — resolve manually"
+                    else
+                        save_deployed "$repo_file" "$basename"
+                        success ".bashrc block: merge resolved"
+                    fi
+                fi
+                ;;
+            u)
+                cp "$dest" "${dest}.bak"
+                sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+                echo "$BASHRC_MARKER" >> "$dest"
+                cat "$repo_file" >> "$dest"
+                save_deployed "$repo_file" "$basename"
+                success ".bashrc block: updated to upstream (backup saved)"
+                ;;
+            e)
+                cp "$dest" "${dest}.bak"
+                "${EDITOR:-vi}" "$dest"
+                save_deployed "$repo_file" "$basename"
+                success ".bashrc block: manually edited (backup saved)"
+                ;;
+            *)
+                info ".bashrc block: keeping your version"
+                ;;
+        esac
+        rm -f "$tmp_current" "$tmp_new" "$tmp_deployed"
+    fi
+}
+
+# ─── Upgrade mode entry point ────────────────────────────────────
+upgrade() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║       Terminal Setup — Upgrade Mode                        ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # 1. Run OS-specific package installer (idempotent — picks up new tools)
+    info "Checking for new/updated packages..."
+    case "$OS" in
+        Darwin) install_macos ;;
+        Linux)
+            case "$DISTRO" in
+                debian|ubuntu|pop|linuxmint|raspbian) install_debian ;;
+                fedora|rhel|centos|rocky|alma)        install_fedora ;;
+                *) fail "Unsupported distro: $DISTRO" ;;
+            esac
+            ;;
+        *) fail "Unsupported OS: $OS" ;;
+    esac
+
+    echo ""
+    info "=== Upgrading configurations ==="
+    echo ""
+
+    # 2. Update ZSH plugins (if using ZSH)
+    if [[ "$DEFAULT_SHELL" == "zsh" ]]; then
+        update_plugins
+        echo ""
+    fi
+
+    # 3. Smart deploy config files
+    mkdir -p ~/.config
+    smart_deploy "$SCRIPT_DIR/starship.toml" "$HOME/.config/starship.toml" "starship.toml"
+    smart_deploy "$SCRIPT_DIR/.shellrc.common" "$HOME/.shellrc.common" "shellrc.common"
+
+    if [[ "$DEFAULT_SHELL" == "zsh" ]]; then
+        smart_deploy "$SCRIPT_DIR/.zshrc" "$HOME/.zshrc" "zshrc"
+    else
+        smart_deploy_bash
+    fi
+
+    # 4. Ensure .shellrc.local exists
+    if [[ ! -f ~/.shellrc.local ]]; then
+        cat > ~/.shellrc.local << 'LOCALEOF'
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  .shellrc.local — Machine-specific overrides                    ║
+# ║  This file is sourced by .shellrc.common and is NOT tracked     ║
+# ║  by git. Put per-machine PATH additions, exports, aliases, etc. ║
+# ║  from your old shell config here.                               ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+LOCALEOF
+        success "Created ~/.shellrc.local (add machine-specific overrides here)"
+    fi
+
+    # 5. Completion banner
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  ✅  Upgrade complete!                                      ║"
+    echo "║                                                             ║"
+    echo "║  Restart your shell:                                        ║"
+    if [[ "$DEFAULT_SHELL" == "zsh" ]]; then
+    echo "║    exec zsh                                                 ║"
+    else
+    echo "║    exec bash                                                ║"
+    fi
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+}
+
 # ─── Deploy config files ─────────────────────────────────────────
 deploy_configs() {
     info "Deploying configuration files..."
@@ -560,6 +1034,7 @@ deploy_configs() {
         warn "Backed up existing starship.toml → starship.toml.bak"
     fi
     cp "$SCRIPT_DIR/starship.toml" ~/.config/starship.toml
+    save_deployed "$SCRIPT_DIR/starship.toml" "starship.toml"
     success "starship.toml → ~/.config/starship.toml"
 
     # Shared shell config (always)
@@ -568,6 +1043,7 @@ deploy_configs() {
         warn "Backed up existing .shellrc.common → .shellrc.common.bak"
     fi
     cp "$SCRIPT_DIR/.shellrc.common" ~/.shellrc.common
+    save_deployed "$SCRIPT_DIR/.shellrc.common" "shellrc.common"
     success ".shellrc.common → ~/.shellrc.common"
 
     # Create .shellrc.local if it doesn't exist (for carrying forward customizations)
@@ -598,10 +1074,12 @@ LOCALEOF
                 cp ~/.zshrc ~/.zshrc.bak
                 warn "Backed up existing .zshrc → .zshrc.bak"
                 cp "$SCRIPT_DIR/.zshrc" ~/.zshrc
+                save_deployed "$SCRIPT_DIR/.zshrc" "zshrc"
                 success ".zshrc → ~/.zshrc"
             fi
         else
             cp "$SCRIPT_DIR/.zshrc" ~/.zshrc
+            save_deployed "$SCRIPT_DIR/.zshrc" "zshrc"
             success ".zshrc → ~/.zshrc"
         fi
         install_zsh_plugins
@@ -615,10 +1093,11 @@ LOCALEOF
                 cp ~/.bashrc ~/.bashrc.bak
                 warn "Backed up existing .bashrc → .bashrc.bak"
                 # Remove old config block and append fresh one
-                sed -i '/^# ── Terminal setup (added by install.sh) ──$/,$d' ~/.bashrc
+                sed_inplace '/^# ── Terminal setup (added by install.sh) ──$/,$d' ~/.bashrc
                 echo "" >> ~/.bashrc
-                echo "# ── Terminal setup (added by install.sh) ──" >> ~/.bashrc
+                echo "$BASHRC_MARKER" >> ~/.bashrc
                 cat "$SCRIPT_DIR/.bashrc.append" >> ~/.bashrc
+                save_deployed "$SCRIPT_DIR/.bashrc.append" "bashrc_block"
                 success "Updated terminal config block in ~/.bashrc"
             else
                 warn "Skipped .bashrc — no changes made."
@@ -629,8 +1108,9 @@ LOCALEOF
                 warn "Backed up existing .bashrc → .bashrc.bak"
             fi
             echo "" >> ~/.bashrc
-            echo "# ── Terminal setup (added by install.sh) ──" >> ~/.bashrc
+            echo "$BASHRC_MARKER" >> ~/.bashrc
             cat "$SCRIPT_DIR/.bashrc.append" >> ~/.bashrc
+            save_deployed "$SCRIPT_DIR/.bashrc.append" "bashrc_block"
             success ".bashrc.append → appended to ~/.bashrc"
         fi
     fi
@@ -663,6 +1143,12 @@ echo "╔═══════════════════════�
 echo "║       Terminal Setup Installer — Sysadmin Edition           ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
+
+# ─── Upgrade mode: smart three-way merge instead of fresh install ─
+if [[ -n "$UPGRADE_MODE" ]]; then
+    upgrade
+    exit 0
+fi
 
 case "$OS" in
     Darwin) install_macos  ;;

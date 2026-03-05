@@ -161,6 +161,23 @@ disabled = true
 
 ### Updating
 
+Pull the latest repo and run with `--upgrade` for smart three-way merge:
+
 ```bash
-cd ~/starship-deploy && git pull && bash install.sh && exec $SHELL
+cd ~/starship-deploy && git pull && bash install.sh --upgrade
+```
+
+The upgrade mode:
+- Installs any new packages added to the repo
+- Updates ZSH plugins via `git fetch`/`git merge --ff-only`
+- Detects whether you or upstream changed each config file
+- Auto-updates files you haven't modified; skips files only you changed
+- Prompts with an interactive menu when both sides changed (diff, merge, keep, use upstream, edit)
+
+Tracks what was last deployed in `~/.config/starship-deploy/deployed/` to enable accurate change detection.
+
+For a full re-deploy (replaces everything with backup):
+
+```bash
+bash install.sh
 ```
