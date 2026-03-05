@@ -38,6 +38,16 @@ for arg in "$@"; do
     case "$arg" in
         --zsh) INSTALL_ZSH=1 ;;
         --upgrade) UPGRADE_MODE=1 ;;
+        --help|-h)
+            echo "Usage: bash install.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  (no flags)    Fresh install — backup existing configs and deploy new ones"
+            echo "  --upgrade     Smart upgrade — three-way merge, keeps your modifications"
+            echo "  --zsh         Install zsh and set as default shell (Linux only)"
+            echo "  --help, -h    Show this help message"
+            exit 0
+            ;;
     esac
 done
 
