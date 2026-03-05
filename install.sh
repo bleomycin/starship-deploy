@@ -532,6 +532,55 @@ sed_inplace() {
     fi
 }
 
+# ─── Find original deployed version from git history ─────────────
+# Searches the repo's git log for the version of a file that most
+# closely matches the user's current file. Outputs a temp file path
+# containing the best-matching version, or nothing if not found.
+find_deploy_base() {
+    local repo_file="$1"
+    local user_file="$2"
+
+    # Get path relative to SCRIPT_DIR (repo root)
+    local rel_path
+    rel_path="${repo_file#$SCRIPT_DIR/}"
+
+    # Verify this is a git repo
+    if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
+        return 1
+    fi
+
+    local best_commit=""
+    local best_diff=999999
+    local tmp
+    tmp=$(mktemp)
+
+    while IFS= read -r commit; do
+        if git -C "$SCRIPT_DIR" show "${commit}:${rel_path}" > "$tmp" 2>/dev/null; then
+            local diff_lines
+            diff_lines=$(diff "$tmp" "$user_file" 2>/dev/null | wc -l | tr -d ' ')
+            if (( diff_lines < best_diff )); then
+                best_diff=$diff_lines
+                best_commit=$commit
+            fi
+            # Exact match — stop early
+            if (( diff_lines == 0 )); then
+                break
+            fi
+        fi
+    done < <(git -C "$SCRIPT_DIR" log --format=%H -- "$rel_path" 2>/dev/null)
+
+    rm -f "$tmp"
+
+    if [[ -n "$best_commit" ]]; then
+        local base_file
+        base_file=$(mktemp)
+        git -C "$SCRIPT_DIR" show "${best_commit}:${rel_path}" > "$base_file" 2>/dev/null
+        echo "$base_file"
+        return 0
+    fi
+    return 1
+}
+
 # ─── Save a copy to the deploy tracking directory ────────────────
 save_deployed() {
     local src="$1"
@@ -669,9 +718,32 @@ smart_deploy() {
             info "$basename: already up to date (baseline created)"
             return
         else
-            # Files differ, no baseline — enter conflict resolution
-            warn "$basename: no upgrade baseline found, files differ"
-            resolve_conflict "$repo_file" "$dest" "" "$basename"
+            # Files differ — try to find the original version from git history
+            local found_base
+            found_base=$(find_deploy_base "$repo_file" "$dest") || true
+            if [[ -n "$found_base" ]]; then
+                info "$basename: found original version in git history, attempting merge..."
+                local tmp_merge
+                tmp_merge=$(mktemp)
+                cp "$dest" "$tmp_merge"
+                if git merge-file "$tmp_merge" "$found_base" "$repo_file" 2>/dev/null; then
+                    # Clean merge — auto-apply
+                    cp "$dest" "${dest}.bak"
+                    cp "$tmp_merge" "$dest"
+                    save_deployed "$repo_file" "$basename"
+                    rm -f "$tmp_merge" "$found_base"
+                    success "$basename: auto-merged (backup saved to ${dest}.bak)"
+                else
+                    # Merge has conflicts — enter interactive resolution with the found base
+                    rm -f "$tmp_merge"
+                    warn "$basename: merge has conflicts, entering interactive resolution"
+                    resolve_conflict "$repo_file" "$dest" "$found_base" "$basename"
+                    rm -f "$found_base"
+                fi
+            else
+                warn "$basename: no upgrade baseline found, files differ"
+                resolve_conflict "$repo_file" "$dest" "" "$basename"
+            fi
             return
         fi
     fi
@@ -735,19 +807,29 @@ resolve_conflict() {
                 echo ""
                 ;;
             m)
-                if [[ -z "$deployed" ]]; then
-                    warn "No baseline available — cannot do three-way merge"
-                    warn "Use [d] to view diff, then [e] to edit manually"
-                    continue
+                local merge_base="$deployed"
+                local auto_base=""
+                if [[ -z "$merge_base" ]]; then
+                    # Try to find base from git history
+                    info "Searching git history for merge base..."
+                    auto_base=$(find_deploy_base "$repo_file" "$dest") || true
+                    if [[ -n "$auto_base" ]]; then
+                        merge_base="$auto_base"
+                        info "Found likely original version in git history"
+                    else
+                        warn "No baseline available — cannot do three-way merge"
+                        warn "Use [d] to view diff, then [e] to edit manually"
+                        continue
+                    fi
                 fi
                 local tmp_merge
                 tmp_merge=$(mktemp)
                 cp "$dest" "$tmp_merge"
-                if git merge-file "$tmp_merge" "$deployed" "$repo_file" 2>/dev/null; then
+                if git merge-file "$tmp_merge" "$merge_base" "$repo_file" 2>/dev/null; then
                     cp "$dest" "${dest}.bak"
                     cp "$tmp_merge" "$dest"
                     save_deployed "$repo_file" "$label"
-                    rm -f "$tmp_merge"
+                    rm -f "$tmp_merge" "$auto_base"
                     success "$label: clean merge applied (backup saved)"
                     return
                 else
@@ -755,7 +837,7 @@ resolve_conflict() {
                     warn "Merge has conflict markers — opening in editor for review"
                     cp "$dest" "${dest}.bak"
                     cp "$tmp_merge" "$dest"
-                    rm -f "$tmp_merge"
+                    rm -f "$tmp_merge" "$auto_base"
                     "${EDITOR:-vi}" "$dest"
                     # Check for remaining conflict markers
                     if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$dest" 2>/dev/null; then
@@ -839,12 +921,37 @@ smart_deploy_bash() {
             info ".bashrc block: already up to date (baseline created)"
             return
         else
-            warn ".bashrc block: no upgrade baseline found, blocks differ"
-            # Show diff and ask
-            local tmp_current tmp_new
+            # Try to find original version from git history
+            local tmp_current
             tmp_current=$(mktemp)
-            tmp_new=$(mktemp)
             echo "$current_block" > "$tmp_current"
+            local found_base
+            found_base=$(find_deploy_base "$repo_file" "$tmp_current") || true
+            if [[ -n "$found_base" ]]; then
+                info ".bashrc block: found original version in git history, attempting merge..."
+                local tmp_merge
+                tmp_merge=$(mktemp)
+                cp "$tmp_current" "$tmp_merge"
+                if git merge-file "$tmp_merge" "$found_base" "$repo_file" 2>/dev/null; then
+                    # Clean merge — auto-apply
+                    cp "$dest" "${dest}.bak"
+                    sed_inplace "/^${marker_escaped}$/,\$d" "$dest"
+                    echo "$BASHRC_MARKER" >> "$dest"
+                    cat "$tmp_merge" >> "$dest"
+                    save_deployed "$repo_file" "$basename"
+                    rm -f "$tmp_merge" "$found_base" "$tmp_current"
+                    success ".bashrc block: auto-merged (backup saved)"
+                    return
+                else
+                    warn ".bashrc block: merge has conflicts"
+                    rm -f "$tmp_merge" "$found_base"
+                fi
+            fi
+
+            # Fall back to manual resolution
+            warn ".bashrc block: no upgrade baseline found, blocks differ"
+            local tmp_new
+            tmp_new=$(mktemp)
             echo "$new_block" > "$tmp_new"
             echo ""
             diff -u --label "current .bashrc block" --label "upstream .bashrc.append" "$tmp_current" "$tmp_new" || true

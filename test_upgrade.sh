@@ -203,6 +203,7 @@ run_in_sandbox() {
 
         eval "$(extract_func sed_inplace "$SCRIPT_DIR/install.sh")"
         eval "$(extract_func save_deployed "$SCRIPT_DIR/install.sh")"
+        eval "$(extract_func find_deploy_base "$SCRIPT_DIR/install.sh")"
         eval "$(extract_func smart_deploy "$SCRIPT_DIR/install.sh")"
         eval "$(extract_func resolve_conflict "$SCRIPT_DIR/install.sh")"
         eval "$(extract_func smart_deploy_bash "$SCRIPT_DIR/install.sh")"
@@ -240,6 +241,7 @@ FAKE_HOME=$(setup_fake_home "test2")
 output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
     type sed_inplace 2>&1
     type save_deployed 2>&1
+    type find_deploy_base 2>&1
     type smart_deploy 2>&1
     type resolve_conflict 2>&1
     type smart_deploy_bash 2>&1
@@ -247,7 +249,7 @@ output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
     type deploy_configs 2>&1
 ' 2>&1) || true
 
-for func in sed_inplace save_deployed smart_deploy resolve_conflict smart_deploy_bash upgrade deploy_configs; do
+for func in sed_inplace save_deployed find_deploy_base smart_deploy resolve_conflict smart_deploy_bash upgrade deploy_configs; do
     if echo "$output" | grep -q "${func}.*function" 2>/dev/null; then
         test_pass "Function $func extracted successfully"
     else
@@ -951,17 +953,23 @@ echo ""
 
 # ═══════════════════════════════════════════════════════════════════
 # TEST 29: smart_deploy_bash — no baseline, blocks differ, pick [u]
+# (Uses a non-git SCRIPT_DIR to force manual fallback — git history
+#  would auto-merge if we used the real repo)
 # ═══════════════════════════════════════════════════════════════════
 echo "── Test 29: smart_deploy_bash — no baseline + differ, [u] ──"
 FAKE_HOME=$(setup_fake_home "test29")
-output=$(run_in_sandbox "$FAKE_HOME" "bash" '
+FAKE_SCRIPT29="$TEST_DIR/test29_script"
+mkdir -p "$FAKE_SCRIPT29"
+cp "$SCRIPT_DIR/.bashrc.append" "$FAKE_SCRIPT29/.bashrc.append"
+output=$(run_in_sandbox "$FAKE_HOME" "bash" "
+    SCRIPT_DIR='$FAKE_SCRIPT29'
     # Create .bashrc with marker and different block
-    echo "# existing stuff" > "$HOME/.bashrc"
-    echo "$BASHRC_MARKER" >> "$HOME/.bashrc"
-    echo "# old hand-edited block" >> "$HOME/.bashrc"
+    echo '# existing stuff' > \"\$HOME/.bashrc\"
+    echo \"\$BASHRC_MARKER\" >> \"\$HOME/.bashrc\"
+    echo '# old hand-edited block' >> \"\$HOME/.bashrc\"
     # No baseline — first upgrade, block differs from repo
     smart_deploy_bash
-' 2>&1 <<< "u")
+" 2>&1 <<< "u")
 echo "$output" | sed 's/^/    /'
 
 if echo "$output" | grep -q "no upgrade baseline"; then
@@ -982,15 +990,20 @@ echo ""
 
 # ═══════════════════════════════════════════════════════════════════
 # TEST 30: smart_deploy_bash — no baseline, blocks differ, pick [k]
+# (Uses a non-git SCRIPT_DIR to force manual fallback)
 # ═══════════════════════════════════════════════════════════════════
 echo "── Test 30: smart_deploy_bash — no baseline + differ, [k]eep ──"
 FAKE_HOME=$(setup_fake_home "test30")
-output=$(run_in_sandbox "$FAKE_HOME" "bash" '
-    echo "# existing stuff" > "$HOME/.bashrc"
-    echo "$BASHRC_MARKER" >> "$HOME/.bashrc"
-    echo "# my hand-crafted block" >> "$HOME/.bashrc"
+FAKE_SCRIPT30="$TEST_DIR/test30_script"
+mkdir -p "$FAKE_SCRIPT30"
+cp "$SCRIPT_DIR/.bashrc.append" "$FAKE_SCRIPT30/.bashrc.append"
+output=$(run_in_sandbox "$FAKE_HOME" "bash" "
+    SCRIPT_DIR='$FAKE_SCRIPT30'
+    echo '# existing stuff' > \"\$HOME/.bashrc\"
+    echo \"\$BASHRC_MARKER\" >> \"\$HOME/.bashrc\"
+    echo '# my hand-crafted block' >> \"\$HOME/.bashrc\"
     smart_deploy_bash
-' 2>&1 <<< "k")
+" 2>&1 <<< "k")
 echo "$output" | sed 's/^/    /'
 
 if echo "$output" | grep -q "keeping your version"; then
@@ -1044,6 +1057,116 @@ else
 fi
 assert_file_contains "$FAKE_HOME/.bashrc" "preamble" \
     "Preamble before marker preserved after merge"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 32: find_deploy_base — finds match in git history
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 32: find_deploy_base — finds match in git history ──"
+FAKE_HOME=$(setup_fake_home "test32")
+# Use an actual repo file (starship.toml) — it has git history
+# Create a "user file" that matches the current version
+USER_COPY="$TEST_DIR/test32_user.toml"
+cp "$SCRIPT_DIR/starship.toml" "$USER_COPY"
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" "
+    result=\$(find_deploy_base \"\$SCRIPT_DIR/starship.toml\" '$USER_COPY') || true
+    if [[ -n \"\$result\" && -f \"\$result\" ]]; then
+        echo 'FOUND_BASE=yes'
+        echo \"BASE_FILE=\$result\"
+        # The found base should be a valid file
+        echo \"BASE_LINES=\$(wc -l < \"\$result\" | tr -d ' ')\"
+        rm -f \"\$result\"
+    else
+        echo 'FOUND_BASE=no'
+    fi
+" 2>&1)
+echo "$output" | sed 's/^/    /'
+
+if echo "$output" | grep -q "FOUND_BASE=yes"; then
+    test_pass "find_deploy_base found a match in git history"
+else
+    test_fail "find_deploy_base did not find a match" "$output"
+fi
+if echo "$output" | grep -qE "BASE_LINES=[1-9]"; then
+    test_pass "Found base file has content"
+else
+    test_fail "Found base file is empty or missing" "$output"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 33: find_deploy_base — returns failure for non-repo file
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 33: find_deploy_base — non-repo file returns failure ──"
+FAKE_HOME=$(setup_fake_home "test33")
+NON_REPO_FILE="$TEST_DIR/test33_nonexistent.conf"
+echo "not in repo" > "$NON_REPO_FILE"
+USER_FILE="$TEST_DIR/test33_user.conf"
+echo "user version" > "$USER_FILE"
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" "
+    if find_deploy_base '$NON_REPO_FILE' '$USER_FILE' >/dev/null 2>&1; then
+        echo 'RESULT=found'
+    else
+        echo 'RESULT=not_found'
+    fi
+" 2>&1)
+echo "$output" | sed 's/^/    /'
+
+if echo "$output" | grep -q "RESULT=not_found"; then
+    test_pass "find_deploy_base correctly returns failure for non-repo file"
+else
+    test_fail "find_deploy_base should not find non-repo files" "$output"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 34: smart_deploy — no baseline, auto-merge via git history
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 34: smart_deploy — no baseline, auto-merge via git history ──"
+FAKE_HOME=$(setup_fake_home "test34")
+# Use a real repo file so find_deploy_base can search git history.
+# Simulate: user has a modified copy of .shellrc.common (added a line at the end),
+# and the repo has the current version. find_deploy_base should find the version
+# closest to the user's file and auto-merge.
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    mkdir -p "$HOME/.config"
+    # User has the current repo version + a custom addition
+    cp "$SCRIPT_DIR/.shellrc.common" "$HOME/.shellrc.common"
+    echo "# my custom alias" >> "$HOME/.shellrc.common"
+    # No baseline — simulating first upgrade
+    # smart_deploy should find the original in git history and auto-merge
+    smart_deploy "$SCRIPT_DIR/.shellrc.common" "$HOME/.shellrc.common" "shellrc.common"
+' 2>&1)
+echo "$output" | sed 's/^/    /'
+
+if echo "$output" | grep -q "auto-merged\|already up to date\|baseline created"; then
+    test_pass "No-baseline auto-merge with git history succeeded"
+else
+    test_fail "No-baseline auto-merge did not succeed" "$output"
+fi
+# User's custom line should still be present
+if grep -q "my custom alias" "$FAKE_HOME/.shellrc.common" 2>/dev/null; then
+    test_pass "User's custom addition preserved after auto-merge"
+else
+    test_fail "User's custom addition lost after auto-merge"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 35: find_deploy_base — function extraction check
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 35: find_deploy_base — function is callable ──"
+FAKE_HOME=$(setup_fake_home "test35")
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    type find_deploy_base 2>&1
+' 2>&1) || true
+echo "$output" | sed 's/^/    /'
+
+if echo "$output" | grep -q "find_deploy_base.*function"; then
+    test_pass "find_deploy_base extracted and callable"
+else
+    test_fail "find_deploy_base not callable" "$output"
+fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
