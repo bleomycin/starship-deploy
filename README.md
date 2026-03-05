@@ -16,6 +16,9 @@ starship.toml          Shell-agnostic prompt config
 .zshrc                 ZSH-specific: sources common + adds plugins (macOS)
 .bashrc.append         Bash-specific: appended to system .bashrc (Linux)
 install.sh             Detects OS + shell, installs everything
+~/.shellrc.local       Per-machine overrides (created by installer, not tracked)
+~/.config/starship-deploy/deployed/
+                       Baselines of last-deployed configs (used by --upgrade)
 ```
 
 The installer detects your default shell. On macOS (zsh), it deploys `.zshrc` with plugins. On Debian/Fedora (bash), it appends to your existing `.bashrc` without replacing it.
@@ -24,17 +27,19 @@ The installer detects your default shell. On macOS (zsh), it deploys `.zshrc` wi
 
 | Feature | Bash | ZSH |
 |---|---|---|
-| Starship prompt | ✅ | ✅ |
-| All aliases (eza, bat, rg, etc.) | ✅ | ✅ |
-| All functions (extract, mkcd, etc.) | ✅ | ✅ |
-| fzf (Ctrl+R, Ctrl+T, Alt+C) | ✅ | ✅ |
-| zoxide (smart cd) | ✅ | ✅ |
-| Midnight Commander | ✅ | ✅ |
-| sshs (SSH TUI picker) | ✅ | ✅ |
-| Autosuggestions (ghost text) | — | ✅ |
-| Syntax highlighting | — | ✅ |
-| fzf-tab (fuzzy Tab completion) | — | ✅ |
-| Case-insensitive completion | — | ✅ |
+| Starship prompt | Yes | Yes |
+| All aliases (eza, bat, rg, etc.) | Yes | Yes |
+| All functions (extract, mkcd, etc.) | Yes | Yes |
+| Docker, systemd, SSH, network shortcuts | Yes | Yes |
+| fzf (Ctrl+R, Ctrl+T, Alt+C) | Yes | Yes |
+| zoxide (smart cd) | Yes | Yes |
+| Midnight Commander | Yes | Yes |
+| sshs (SSH TUI picker) | Yes | Yes |
+| Built-in `help` cheat sheet | Yes | Yes |
+| Autosuggestions (ghost text) | — | Yes |
+| Syntax highlighting | — | Yes |
+| fzf-tab (fuzzy Tab completion) | — | Yes |
+| Case-insensitive completion | — | Yes |
 
 ---
 
@@ -107,6 +112,16 @@ exec bash
 
 ---
 
+## Installer Flags
+
+```bash
+bash install.sh              # Fresh install (backup + replace)
+bash install.sh --zsh        # Also install zsh and set as default shell (Linux)
+bash install.sh --upgrade    # Smart upgrade with three-way merge
+```
+
+---
+
 ## Tool List
 
 | Tool | Replaces | Why |
@@ -121,6 +136,9 @@ exec bash
 | **duf** | `df` | Pretty disk free table |
 | **btop** | `top/htop` | Modern resource monitor |
 | **procs** | `ps` | Colorized process list |
+| **gping** | `ping` | Ping with a live graph |
+| **doggo** | `dig` | Modern DNS client |
+| **viddy** | `watch` | Modern watch with diff highlighting |
 | **mc** | — | Two-panel file manager (F-key shortcuts) |
 | **sshs** | — | TUI SSH config browser |
 | **tldr/tlrc** | `man` | Community cheat sheets |
@@ -128,7 +146,11 @@ exec bash
 
 ---
 
-## Key Shortcuts
+## Key Shortcuts & Aliases
+
+After installation, type `help` for the full cheat sheet. Here are the highlights:
+
+### Navigation
 
 | Shortcut | Tool | Action |
 |---|---|---|
@@ -138,7 +160,74 @@ exec bash
 | `z <name>` | zoxide | Jump to frequently used directory |
 | `zi` | zoxide | Interactive directory picker |
 | `mc` | mc | Two-panel file manager |
-| `sshs` | sshs | TUI SSH connection picker |
+| `mkcd <dir>` | — | Create directory and cd into it |
+
+### File listing (eza)
+
+| Alias | Action |
+|---|---|
+| `ls` | List with icons, directories first |
+| `ll` | Long list + hidden + git status |
+| `la` | All files including hidden |
+| `lt` | Tree view, 3 levels deep |
+| `llt` | Tree + details, 2 levels |
+| `lcth` | Long list sorted by change time |
+
+### SSH
+
+| Alias | Action |
+|---|---|
+| `sshs` | TUI picker — browse ~/.ssh/config visually |
+| `sshk <email>` | Generate ed25519 key |
+| `sshcopy` | Copy public key to remote host |
+| `sshinfo <host>` | SSH + print hostname, uptime, memory, disk |
+| `scpto <file> [path]` | SCP to host (fzf-pick host) |
+| `scpfrom <path> [local]` | SCP from host (fzf-pick host) |
+
+### Docker
+
+| Alias | Action |
+|---|---|
+| `d` / `dc` | docker / docker compose |
+| `dps` / `dpsa` | Running / all containers (clean table) |
+| `dlog <name>` | Follow container logs (last 100 lines) |
+| `dsh <name>` | Shell into container (tries bash, then sh) |
+| `dstats` | Live CPU/memory/network per container |
+| `dprune` | Remove ALL unused containers/images/volumes |
+
+### Systemd (Linux)
+
+| Alias | Action |
+|---|---|
+| `scs <svc>` | systemctl status |
+| `scr <svc>` | systemctl restart |
+| `scls` | List all service units |
+| `scfailed` | List failed units |
+| `jlogf <svc>` | Follow journalctl logs live |
+
+### Network
+
+| Alias | Action |
+|---|---|
+| `ports` | Show listening ports |
+| `myip` | Public IP address |
+| `localip` | Local/LAN IP address |
+| `portcheck <host> <port>` | Test if host:port is open |
+| `killport <port>` | Kill process(es) on a port |
+| `gping <host>` | Ping with live graph |
+| `doggo <domain>` | DNS lookup |
+
+### Bypassing aliases
+
+Many commands are aliased to modern replacements. To use the original, prefix with `\`:
+
+```bash
+\ls       # real ls (not eza)
+\cat      # real cat (not bat)
+\grep     # real grep (not ripgrep)
+\du       # real du (not dust)
+\ps       # real ps (not procs)
+```
 
 ---
 
@@ -146,7 +235,7 @@ exec bash
 
 ### Per-machine overrides
 
-Create `~/.shellrc.local` for machine-specific settings. It's sourced at the end of `.shellrc.common` and is not tracked by git.
+`~/.shellrc.local` is sourced at the end of `.shellrc.common`. Put machine-specific PATH additions, exports, or aliases here. It's created by the installer and not tracked by git.
 
 ### Starship on slow SSH connections
 
