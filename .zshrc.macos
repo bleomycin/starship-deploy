@@ -1,0 +1,14 @@
+# ─── Claude Code SSH Keychain fix ───────────────────────────────
+# macOS Keychain is inaccessible from SSH sessions. This wrapper
+# unlocks it on first `claude` invocation so you authenticate once.
+claude() {
+  if [ -n "$SSH_CONNECTION" ] && [ -z "$KEYCHAIN_UNLOCKED" ]; then
+    echo "Unlocking macOS Keychain for SSH session..."
+    security unlock-keychain ~/Library/Keychains/login.keychain-db
+    export KEYCHAIN_UNLOCKED=true
+  fi
+  command claude "$@"
+}
+
+# ─── iTerm2 shell integration ──────────────────────────────────
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"

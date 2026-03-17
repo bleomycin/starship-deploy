@@ -589,6 +589,17 @@ save_deployed() {
     cp "$src" "$DEPLOY_TRACKING_DIR/$basename"
 }
 
+# Build the effective .zshrc for this OS (appends macOS extras on Darwin)
+build_zshrc() {
+    local tmp
+    tmp=$(mktemp)
+    cat "$SCRIPT_DIR/.zshrc" > "$tmp"
+    if [[ "$OS" == "Darwin" && -f "$SCRIPT_DIR/.zshrc.macos" ]]; then
+        cat "$SCRIPT_DIR/.zshrc.macos" >> "$tmp"
+    fi
+    echo "$tmp"
+}
+
 # ─── Update ZSH plugins via git ──────────────────────────────────
 update_plugins() {
     info "Updating ZSH plugins..."
@@ -1106,7 +1117,10 @@ upgrade() {
     smart_deploy "$SCRIPT_DIR/.shellrc.common" "$HOME/.shellrc.common" "shellrc.common"
 
     if [[ "$DEFAULT_SHELL" == "zsh" ]]; then
-        smart_deploy "$SCRIPT_DIR/.zshrc" "$HOME/.zshrc" "zshrc"
+        local zshrc_src
+        zshrc_src=$(build_zshrc)
+        smart_deploy "$zshrc_src" "$HOME/.zshrc" "zshrc"
+        rm -f "$zshrc_src"
     else
         smart_deploy_bash
     fi
@@ -1186,19 +1200,22 @@ LOCALEOF
     # Shell-specific config
     if [[ "$DEFAULT_SHELL" == "zsh" ]]; then
         info "Detected ZSH — deploying full ZSH config + plugins"
+        local zshrc_src
+        zshrc_src=$(build_zshrc)
         if [[ -f ~/.zshrc ]]; then
             if show_custom_lines ~/.zshrc "~/.zshrc"; then
                 cp ~/.zshrc ~/.zshrc.bak
                 warn "Backed up existing .zshrc → .zshrc.bak"
-                cp "$SCRIPT_DIR/.zshrc" ~/.zshrc
-                save_deployed "$SCRIPT_DIR/.zshrc" "zshrc"
+                cp "$zshrc_src" ~/.zshrc
+                save_deployed "$zshrc_src" "zshrc"
                 success ".zshrc → ~/.zshrc"
             fi
         else
-            cp "$SCRIPT_DIR/.zshrc" ~/.zshrc
-            save_deployed "$SCRIPT_DIR/.zshrc" "zshrc"
+            cp "$zshrc_src" ~/.zshrc
+            save_deployed "$zshrc_src" "zshrc"
             success ".zshrc → ~/.zshrc"
         fi
+        rm -f "$zshrc_src"
         install_zsh_plugins
     else
         info "Detected Bash — appending to existing .bashrc"

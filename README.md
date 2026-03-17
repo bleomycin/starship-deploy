@@ -13,7 +13,8 @@ Uses whatever shell the system ships with. On Linux, optionally install zsh and 
 ```
 starship.toml          Shell-agnostic prompt config
 .shellrc.common        Shared aliases, functions, tool init (bash + zsh compatible)
-.zshrc                 ZSH-specific: sources common + adds plugins (macOS)
+.zshrc                 ZSH-specific: sources common + adds plugins
+.zshrc.macos           macOS-only extras (appended to .zshrc on Darwin by installer)
 .bashrc.append         Bash-specific: appended to system .bashrc (Linux)
 install.sh             Detects OS + shell, installs everything
 ~/.shellrc.local       Per-machine overrides (created by installer, not tracked)
@@ -124,24 +125,26 @@ bash install.sh --upgrade    # Smart upgrade with three-way merge
 
 ## Tool List
 
-| Tool | Replaces | Why |
+Modern tools are installed alongside system commands — they **never shadow** `ls`, `cat`, `grep`, etc. Access them via doubled-letter aliases (`lss`, `catt`, `grepp`, etc.) or by their real names. Scripts, AI agents, and standard flags always work as expected.
+
+| Tool | Alias | Why |
 |---|---|---|
-| **eza** | `ls` | Icons, git status, tree view |
-| **bat** | `cat` | Syntax highlighting, line numbers |
-| **fd** | `find` | Simpler syntax, faster |
-| **ripgrep** | `grep` | Much faster, better defaults |
+| **eza** | `lss` | Icons, git status, tree view |
+| **bat** | `catt` | Syntax highlighting, line numbers |
+| **fd** | `fd` | Simpler syntax, faster |
+| **ripgrep** | `grepp` | Much faster, better defaults |
 | **fzf** | — | Fuzzy finder for files, history, dirs |
-| **zoxide** | `cd` | Learns directories, `z` to jump |
-| **dust** | `du` | Visual disk usage |
-| **duf** | `df` | Pretty disk free table |
-| **btop** | `top/htop` | Modern resource monitor |
-| **procs** | `ps` | Colorized process list |
-| **gping** | `ping` | Ping with a live graph |
-| **doggo** | `dig` | Modern DNS client |
-| **viddy** | `watch` | Modern watch with diff highlighting |
-| **mc** | — | Two-panel file manager (F-key shortcuts) |
-| **sshs** | — | TUI SSH config browser |
-| **tldr/tlrc** | `man` | Community cheat sheets |
+| **zoxide** | `z` | Learns directories, jump by name |
+| **dust** | `duu` | Visual disk usage |
+| **duf** | `dff` | Pretty disk free table |
+| **btop** | `topp` | Modern resource monitor |
+| **procs** | `pss` | Colorized process list |
+| **gping** | — | Ping with a live graph |
+| **doggo** | — | Modern DNS client |
+| **viddy** | — | Modern watch with diff highlighting |
+| **mc** | `mc` | Two-panel file manager (F-key shortcuts) |
+| **sshs** | `sshs` | TUI SSH config browser |
+| **tldr/tlrc** | — | Community cheat sheets |
 | **jq** / **yq** | — | JSON / YAML processor |
 
 ---
@@ -166,7 +169,8 @@ After installation, type `help` for the full cheat sheet. Here are the highlight
 
 | Alias | Action |
 |---|---|
-| `ls` | List with icons, directories first |
+| `ls` | Standard ls (always) |
+| `lss` | eza with icons, directories first |
 | `ll` | Long list + hidden + git status |
 | `la` | All files including hidden |
 | `lt` | Tree view, 3 levels deep |
@@ -217,17 +221,13 @@ After installation, type `help` for the full cheat sheet. Here are the highlight
 | `gping <host>` | Ping with live graph |
 | `doggo <domain>` | DNS lookup |
 
-### Bypassing aliases
+### Tmux
 
-Many commands are aliased to modern replacements. To use the original, prefix with `\`:
-
-```bash
-\ls       # real ls (not eza)
-\cat      # real cat (not bat)
-\grep     # real grep (not ripgrep)
-\du       # real du (not dust)
-\ps       # real ps (not procs)
-```
+| Alias | Action |
+|---|---|
+| `tn <name>` | New named session |
+| `ta [name]` | Smart attach (fzf-pick if multiple, auto-create if named) |
+| `tk [name]` | Smart kill (fzf-pick if no name given) |
 
 ---
 

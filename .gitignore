@@ -1,3 +1,4 @@
 *.bak
+*.new
 .DS_Store
 files.zip

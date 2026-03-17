@@ -24,14 +24,14 @@ export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
 export EDITOR="${EDITOR:-nano}"
 
 # --- Modern CLI tool aliases ------------------------------------------
-# Each alias checks if the tool exists first for portability.
-# On systems where these aren't installed, original commands work as normal.
+# Modern tools are available via doubled-letter aliases (lss, catt, grepp,
+# etc.) so they NEVER shadow system commands. Scripts, AI agents, and
+# standard flag syntax always work as expected.
 
-# eza -> ls replacement
+# eza (modern ls alternative)
 if command -v eza >/dev/null 2>&1; then
-    # Use unified config dir (eza on macOS defaults to ~/Library/Application Support/eza)
     export EZA_CONFIG_DIR="$HOME/.config/eza"
-    alias ls='eza --icons --group-directories-first'
+    alias lss='eza --icons --group-directories-first'
     alias ll='eza -lah --icons --group-directories-first --git'
     alias la='eza -a --icons --group-directories-first'
     alias lt='eza --tree --icons --level=3 --group-directories-first'
@@ -42,50 +42,50 @@ else
     alias la='ls -a'
 fi
 
-# bat -> cat replacement
+# bat (modern cat alternative)
 if command -v bat >/dev/null 2>&1; then
-    alias cat='bat --paging=never'
+    alias catt='bat --paging=never'
     alias catp='bat --plain --paging=never'
     alias catl='bat --paging=always'
     export MANPAGER="sh -c 'col -bx | bat -l man -p'"
     export BAT_THEME="OneHalfDark"
 elif command -v batcat >/dev/null 2>&1; then
     alias bat='batcat'
-    alias cat='batcat --paging=never'
+    alias catt='batcat --paging=never'
     alias catp='batcat --plain --paging=never'
     alias catl='batcat --paging=always'
     export MANPAGER="sh -c 'col -bx | batcat -l man -p'"
     export BAT_THEME="OneHalfDark"
 fi
 
-# fd -> find replacement (Debian ships it as fdfind)
+# fd (modern find alternative — Debian ships it as fdfind)
 if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
     alias fd='fdfind'
 fi
 
-# ripgrep -> grep replacement
+# ripgrep (modern grep alternative)
 if command -v rg >/dev/null 2>&1; then
-    alias grep='rg'
+    alias grepp='rg'
 fi
 
-# dust -> du replacement
+# dust (modern du alternative)
 if command -v dust >/dev/null 2>&1; then
-    alias du='dust'
+    alias duu='dust'
 fi
 
-# duf -> df replacement
+# duf (modern df alternative)
 if command -v duf >/dev/null 2>&1; then
-    alias df='duf'
+    alias dff='duf'
 fi
 
-# btop -> top replacement
+# btop (modern top alternative)
 if command -v btop >/dev/null 2>&1; then
-    alias top='btop'
+    alias topp='btop'
 fi
 
-# procs -> ps replacement
+# procs (modern ps alternative)
 if command -v procs >/dev/null 2>&1; then
-    alias ps='procs'
+    alias pss='procs'
 fi
 
 # Midnight Commander -- exit into the directory you navigated to
@@ -297,37 +297,89 @@ killport() {
     lsof -ti :"$1" | xargs kill -9 2>/dev/null && echo "Killed processes on port $1" || echo "No process found on port $1"
 }
 
+# --- tmux shortcuts ---------------------------------------------------
+
+# New named session
+tn() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: tn <session-name>"
+        return 1
+    fi
+    tmux new-session -s "$1"
+}
+
+# Smart attach: fzf-pick if multiple, auto-attach if one, create if none
+ta() {
+    if [ -n "$1" ]; then
+        tmux attach -t "$1" 2>/dev/null || tmux new-session -s "$1"
+        return
+    fi
+    local sessions
+    sessions=$(tmux ls 2>/dev/null) || { tmux new-session; return; }
+    local count
+    count=$(echo "$sessions" | wc -l | tr -d ' ')
+    if [ "$count" -eq 1 ]; then
+        tmux attach
+    elif command -v fzf >/dev/null 2>&1; then
+        local target
+        target=$(echo "$sessions" | fzf --height=40% --reverse | cut -d: -f1)
+        [ -n "$target" ] && tmux attach -t "$target"
+    else
+        tmux attach
+    fi
+}
+
+# Smart kill: fzf-pick session to kill, or kill by name
+tk() {
+    if [ -n "$1" ]; then
+        tmux kill-session -t "$1"
+        return
+    fi
+    local sessions
+    sessions=$(tmux ls 2>/dev/null) || { echo "No tmux sessions"; return 1; }
+    if command -v fzf >/dev/null 2>&1; then
+        local target
+        target=$(echo "$sessions" | fzf --height=40% --reverse | cut -d: -f1)
+        [ -n "$target" ] && tmux kill-session -t "$target"
+    else
+        echo "Specify session: tk <name>"
+        echo "$sessions"
+    fi
+}
+
 # --- Cheat sheet ------------------------------------------------------
 help() {
     cat << 'HELPEOF'
 
-  BYPASSING ALIASES
-  =================
-  Many commands are aliased to modern replacements.
-  To use the ORIGINAL command, prefix with backslash:
+  MODERN TOOL ALIASES
+  ====================
+  System commands (ls, cat, grep, etc.) are NEVER shadowed.
+  Modern alternatives use doubled-letter aliases:
 
-    \ls             Real ls (use this for flags eza doesn't support)
-    \cat            Real cat (no syntax highlighting)
-    \grep           Real grep (not ripgrep)
-    \du             Real du (not dust)
-    \df             Real df (not duf)
-    \top            Real top (not btop)
-    \ps             Real ps (not procs)
+    lss             eza (ls with icons, directories first)
+    catt            bat (cat with syntax highlighting)
+    grepp           rg  (ripgrep)
+    duu             dust (du with visual bars)
+    dff             duf (df with colors)
+    topp            btop (modern top)
+    pss             procs (modern ps)
 
-  FILE LISTING (eza replaces ls)
-  ==============================
-    ls              List with icons, directories first
-    ll              Long list + hidden + git status
-    la              All files including hidden
-    lt              Tree view, 3 levels deep
-    llt             Tree + details, 2 levels deep
-    lcth            Long list sorted by change time, newest first
+  FILE LISTING
+  ============
+    ls              Standard ls (always)
+    lss             eza with icons, directories first
+    ll              Long list + hidden + git status (eza)
+    la              All files including hidden (eza)
+    lt              Tree view, 3 levels deep (eza)
+    llt             Tree + details, 2 levels deep (eza)
+    lcth            Long list sorted by change time (eza)
 
-  READING FILES (bat replaces cat)
-  ================================
-    cat <file>      View with syntax highlighting + line numbers
-    catp <file>     Plain view (no line numbers, no decorations)
-    catl <file>     Scrollable pager (like less, but with highlighting)
+  READING FILES
+  =============
+    cat <file>      Standard cat (always)
+    catt <file>     bat with syntax highlighting + line numbers
+    catp <file>     bat plain (no line numbers, no decorations)
+    catl <file>     bat scrollable pager
     man <cmd>       Man pages render through bat automatically
 
   NAVIGATION
@@ -371,6 +423,12 @@ help() {
     dcwatch [svc]   Follow compose logs (optional service filter)
     dprune          Remove ALL unused containers/images/volumes !!
 
+  TMUX
+  ====
+    tn <name>       New named session
+    ta [name]       Smart attach (fzf-pick if multiple, auto-create if named)
+    tk [name]       Smart kill (fzf-pick if no name given)
+
   NETWORK
   =======
     ports           Show listening ports (ss or netstat)
@@ -412,7 +470,7 @@ help() {
   SYSTEM INFO
   ===========
     path            Show PATH entries, one per line
-    diskuse         Disk usage summary (real df, not duf)
+    diskuse         Disk usage summary
     meminfo         Memory info (free -h / vm_stat on mac)
     cpuinfo         CPU model and details
 
