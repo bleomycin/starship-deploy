@@ -135,7 +135,28 @@ fi
 # --- SSH shortcuts ----------------------------------------------------
 alias sshk='ssh-keygen -t ed25519 -C'
 alias sshfp='ssh-keygen -l -f'
-alias sshcopy='ssh-copy-id -i ~/.ssh/id_ed25519.pub'
+sshcopy() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: sshcopy <user@host>"
+        return 1
+    fi
+    local keys key tmpfile
+    keys=$(ssh-add -L 2>/dev/null)
+    if [ -z "$keys" ]; then
+        echo "No keys found in SSH agent"
+        return 1
+    fi
+    if command -v fzf >/dev/null 2>&1; then
+        key=$(echo "$keys" | fzf --height=40% --reverse --prompt="Select key> ")
+        [ -z "$key" ] && return 1
+    else
+        key="$keys"
+    fi
+    tmpfile=$(mktemp /tmp/sshcopy.XXXXXX)
+    echo "$key" > "${tmpfile}.pub"
+    ssh-copy-id -i "$tmpfile" -o PubkeyAuthentication=no "$@"
+    rm -f "$tmpfile" "${tmpfile}.pub"
+}
 
 # --- SCP helpers ------------------------------------------------------
 # fzf-pick a host from ssh config, then scp
@@ -399,7 +420,7 @@ help() {
   ===
     sshs            TUI picker -- browse ~/.ssh/config visually
     sshk <email>    Generate ed25519 key
-    sshcopy         Copy public key to remote host
+    sshcopy <host>  Copy SSH key to remote host (fzf-pick key from agent)
     sshfp <file>    Show key fingerprint
     sshinfo <host>  SSH + print hostname, uptime, memory, disk
     sshconf         Open ~/.ssh/config in editor

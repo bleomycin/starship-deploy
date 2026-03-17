@@ -183,7 +183,7 @@ After installation, type `help` for the full cheat sheet. Here are the highlight
 |---|---|
 | `sshs` | TUI picker — browse ~/.ssh/config visually |
 | `sshk <email>` | Generate ed25519 key |
-| `sshcopy` | Copy public key to remote host |
+| `sshcopy <host>` | Copy SSH key to host (fzf-pick key from agent) |
 | `sshinfo <host>` | SSH + print hostname, uptime, memory, disk |
 | `scpto <file> [path]` | SCP to host (fzf-pick host) |
 | `scpfrom <path> [local]` | SCP from host (fzf-pick host) |
