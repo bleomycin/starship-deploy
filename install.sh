@@ -784,6 +784,68 @@ smart_deploy() {
     fi
 }
 
+# ─── Smart conflict resolution fallback ───────────────────────
+# When git merge-file fails (e.g. same content moved to a different
+# position), detect user-only additions and offer to save them to
+# ~/.shellrc.local while applying the upstream version cleanly.
+try_smart_resolve() {
+    local repo_file="$1"
+    local dest="$2"
+    local merge_base="$3"
+    local label="$4"
+
+    # Guard: need valid files to compare
+    if [[ ! -f "$merge_base" || ! -f "$repo_file" || ! -f "$dest" ]]; then
+        return 1
+    fi
+
+    # Find functional lines unique to user (not in baseline or upstream)
+    local user_additions
+    user_additions=$(
+        comm -23 \
+            <(grep -vE '^\s*$|^\s*#' "$dest" | sort -u) \
+            <(cat "$merge_base" "$repo_file" | grep -vE '^\s*$|^\s*#' | sort -u)
+    )
+
+    if [[ -z "$user_additions" ]]; then
+        # All user content exists in upstream — safe to use upstream directly
+        cp "$dest" "${dest}.bak"
+        cp "$repo_file" "$dest"
+        save_deployed "$repo_file" "$label"
+        success "$label: auto-resolved using upstream (backup saved)"
+        return 0
+    fi
+
+    # User has unique additions — offer to preserve them
+    info "$label: your additions not present in upstream:"
+    echo "────────────────────────────────────────────"
+    echo "$user_additions"
+    echo "────────────────────────────────────────────"
+    echo ""
+    read -rp "Save these to ~/.shellrc.local and use upstream? [Y/n] " answer
+    if [[ ! "$answer" =~ ^[Nn] ]]; then
+        cp "$dest" "${dest}.bak"
+        cp "$repo_file" "$dest"
+        save_deployed "$repo_file" "$label"
+        # Only append lines not already in .shellrc.local
+        local new_additions=""
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            grep -qF "$line" "$HOME/.shellrc.local" 2>/dev/null || new_additions+="$line"$'\n'
+        done <<< "$user_additions"
+        if [[ -n "$new_additions" ]]; then
+            echo "" >> "$HOME/.shellrc.local"
+            echo "# ── Preserved from $label upgrade ($(date +%F)) ──" >> "$HOME/.shellrc.local"
+            printf '%s' "$new_additions" >> "$HOME/.shellrc.local"
+            success "$label: updated (custom additions saved to ~/.shellrc.local)"
+        else
+            success "$label: updated (custom additions already in ~/.shellrc.local)"
+        fi
+        return 0
+    fi
+    return 1
+}
+
 # ─── Interactive conflict resolution ─────────────────────────────
 resolve_conflict() {
     local repo_file="$1"
@@ -844,20 +906,31 @@ resolve_conflict() {
                     success "$label: clean merge applied (backup saved)"
                     return
                 else
-                    # Merge has conflicts
-                    warn "Merge has conflict markers — opening in editor for review"
+                    # Merge has conflicts — try smart resolution first
+                    rm -f "$tmp_merge"
+                    if try_smart_resolve "$repo_file" "$dest" "$merge_base" "$label"; then
+                        rm -f "$auto_base"
+                        return
+                    fi
+                    # Smart resolution declined — fall back to editor
+                    warn "Opening editor with conflict markers for manual resolution"
+                    local tmp_merge2
+                    tmp_merge2=$(mktemp)
+                    cp "$dest" "$tmp_merge2"
+                    git merge-file "$tmp_merge2" "$merge_base" "$repo_file" 2>/dev/null || true
                     cp "$dest" "${dest}.bak"
-                    cp "$tmp_merge" "$dest"
-                    rm -f "$tmp_merge" "$auto_base"
+                    cp "$tmp_merge2" "$dest"
+                    rm -f "$tmp_merge2" "$auto_base"
                     "${EDITOR:-vi}" "$dest"
                     # Check for remaining conflict markers
                     if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$dest" 2>/dev/null; then
-                        warn "Conflict markers still present in $label — resolve manually"
+                        warn "Conflict markers still present — restoring your original"
+                        cp "${dest}.bak" "$dest"
                     else
                         save_deployed "$repo_file" "$label"
                         success "$label: merge resolved"
+                        return
                     fi
-                    return
                 fi
                 ;;
             k)
@@ -1050,7 +1123,8 @@ smart_deploy_bash() {
                     rm -f "$tmp_merge"
                     "${EDITOR:-vi}" "$dest"
                     if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$dest" 2>/dev/null; then
-                        warn "Conflict markers still present — resolve manually"
+                        warn "Conflict markers still present — restoring your original"
+                        cp "${dest}.bak" "$dest"
                     else
                         save_deployed "$repo_file" "$basename"
                         success ".bashrc block: merge resolved"
