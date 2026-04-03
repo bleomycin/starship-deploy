@@ -87,88 +87,30 @@ setup_fake_home() {
 }
 
 # ─── Source install.sh in a subshell with stubs ──────────────────
-# We can't source the whole file (it runs immediately), so we'll
-# extract just the functions and test them directly.
-
-# Create a version of install.sh that only defines functions + vars
-# without executing the main flow
-create_function_library() {
-    local lib="$TEST_DIR/install_lib.sh"
-    cat > "$lib" << 'STUBEOF'
-# Stubs for system-altering functions
-install_macos() { : ; }
-install_debian() { : ; }
-install_fedora() { : ; }
-install_zsh_shell() { : ; }
-install_zsh_plugins() { : ; }
-check_nerd_font() { : ; }
-as_root() { : ; }
-show_custom_lines() { return 0; }
-STUBEOF
-
-    # Extract everything from install.sh between the first function
-    # and the main flow, plus the variable definitions
-    # Simpler: just source the whole file but redefine dangerous parts
-    # and prevent the main flow from running
-
-    # Actually, let's just extract the functions we need to test
-    # by sourcing install.sh with modifications
-    cat >> "$lib" << VAREOF
-OS="$(uname -s)"
-DISTRO=""
-DEFAULT_SHELL="zsh"
-CURRENT_USER="testuser"
-SCRIPT_DIR="$SCRIPT_DIR"
-VAREOF
-
-    # Append the color/logging functions and all new functions from install.sh
-    # Extract: info, success, warn, fail, sed_inplace, save_deployed,
-    # update_plugins, smart_deploy, resolve_conflict, smart_deploy_bash, upgrade, deploy_configs
-    sed -n '
-        /^RED=/,/^fail()/p
-        /^DEPLOY_TRACKING_DIR=/p
-        /^BASHRC_MARKER=/p
-        /^sed_inplace()/,/^}/p
-        /^save_deployed()/,/^}/p
-        /^smart_deploy()/,/^}/p
-        /^deploy_configs()/,/^}/p
-    ' "$SCRIPT_DIR/install.sh" >> "$lib" 2>/dev/null || true
-
-    echo "$lib"
-}
-
-# Better approach: source install.sh in a controlled way
+# install.sh guards its main block with BASH_SOURCE, so sourcing it
+# only loads the library (colors, logging, all functions). We set
+# platform variables and stub dangerous functions in the subshell.
 run_in_sandbox() {
     local fake_home="$1"
     local shell_type="${2:-zsh}"
     local extra_code="$3"
 
     (
-        # Override HOME
         export HOME="$fake_home"
 
-        # Set variables that install.sh sets at top level
+        # Set platform variables (normally set in install.sh's guarded main block)
         OS="$(uname -s)"
         DISTRO=""
         DEFAULT_SHELL="$shell_type"
         CURRENT_USER="testuser"
-        SCRIPT_DIR="$SCRIPT_DIR"
+
+        # Source install.sh — gets ALL functions + colors + logging
+        source "$SCRIPT_DIR/install.sh"
+
+        # Override HOME-dependent vars
         DEPLOY_TRACKING_DIR="$fake_home/.config/starship-deploy/deployed"
-        BASHRC_MARKER="# ── Terminal setup (added by install.sh) ──"
 
-        # Colors
-        RED='\033[0;31m'
-        GREEN='\033[0;32m'
-        YELLOW='\033[0;33m'
-        CYAN='\033[0;36m'
-        NC='\033[0m'
-
-        info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
-        success() { echo -e "${GREEN}[OK]${NC}    $*"; }
-        warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-        fail()    { echo -e "${RED}[FAIL]${NC}  $*"; return 1; }
-
-        # Stub out dangerous functions
+        # Stub dangerous functions AFTER sourcing
         install_macos() { :; }
         install_debian() { :; }
         install_fedora() { :; }
@@ -178,39 +120,8 @@ run_in_sandbox() {
         as_root() { :; }
         show_custom_lines() { return 0; }
         update_plugins() { info "update_plugins stubbed"; }
+        fail() { echo -e "${RED}[FAIL]${NC}  $*"; return 1; }
 
-        # Source just the function definitions from install.sh
-        # We need: sed_inplace, save_deployed, smart_deploy, resolve_conflict,
-        # smart_deploy_bash, upgrade, deploy_configs
-        eval "$(sed -n '/^sed_inplace()/,/^}$/p' "$SCRIPT_DIR/install.sh")"
-        eval "$(sed -n '/^save_deployed()/,/^}$/p' "$SCRIPT_DIR/install.sh")"
-
-        # For multi-line functions with nested braces, we need a smarter extract
-        # Let's use awk to extract functions properly
-        extract_func() {
-            local func_name="$1"
-            local file="$2"
-            awk "/^${func_name}\\(\\)/{found=1; depth=0} found{
-                for(i=1;i<=length(\$0);i++){
-                    c=substr(\$0,i,1)
-                    if(c==\"{\") depth++
-                    if(c==\"}\") depth--
-                }
-                print
-                if(found && depth==0 && /}/) exit
-            }" "$file"
-        }
-
-        eval "$(extract_func sed_inplace "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func save_deployed "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func find_deploy_base "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func smart_deploy "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func resolve_conflict "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func smart_deploy_bash "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func upgrade "$SCRIPT_DIR/install.sh")"
-        eval "$(extract_func deploy_configs "$SCRIPT_DIR/install.sh")"
-
-        # Run the test code
         eval "$extra_code"
     )
 }
@@ -234,24 +145,26 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# TEST 2: Function extraction works
+# TEST 2: Function availability (sourcing install.sh)
 # ═══════════════════════════════════════════════════════════════════
-echo "── Test 2: Function extraction ──"
+echo "── Test 2: Function availability ──"
 FAKE_HOME=$(setup_fake_home "test2")
 output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
     type sed_inplace 2>&1
     type save_deployed 2>&1
     type find_deploy_base 2>&1
     type smart_deploy 2>&1
+    type try_smart_resolve 2>&1
     type resolve_conflict 2>&1
     type smart_deploy_bash 2>&1
+    type build_zshrc 2>&1
     type upgrade 2>&1
     type deploy_configs 2>&1
 ' 2>&1) || true
 
-for func in sed_inplace save_deployed find_deploy_base smart_deploy resolve_conflict smart_deploy_bash upgrade deploy_configs; do
+for func in sed_inplace save_deployed find_deploy_base smart_deploy try_smart_resolve resolve_conflict smart_deploy_bash build_zshrc upgrade deploy_configs; do
     if echo "$output" | grep -q "${func}.*function" 2>/dev/null; then
-        test_pass "Function $func extracted successfully"
+        test_pass "Function $func available"
     else
         test_fail "Function $func not found" "$(echo "$output" | grep "$func" || echo 'not in output')"
     fi
@@ -1163,9 +1076,142 @@ output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
 echo "$output" | sed 's/^/    /'
 
 if echo "$output" | grep -q "find_deploy_base.*function"; then
-    test_pass "find_deploy_base extracted and callable"
+    test_pass "find_deploy_base available and callable"
 else
     test_fail "find_deploy_base not callable" "$output"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 36: try_smart_resolve — missing files returns failure
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 36: try_smart_resolve — missing files returns failure ──"
+FAKE_HOME=$(setup_fake_home "test36")
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    if try_smart_resolve "/nonexistent" "/also/nonexistent" "/nope" "test"; then
+        echo "RESULT=resolved"
+    else
+        echo "RESULT=failed"
+    fi
+' 2>&1) || true
+
+if echo "$output" | grep -q "RESULT=failed"; then
+    test_pass "try_smart_resolve returns failure for missing files"
+else
+    test_fail "try_smart_resolve should fail with missing files" "$output"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 37: try_smart_resolve — no unique user additions, auto-resolve
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 37: try_smart_resolve — no unique additions, auto-resolve ──"
+FAKE_HOME=$(setup_fake_home "test37")
+mkdir -p "$FAKE_HOME/.config/starship-deploy/deployed"
+
+# base: two lines
+echo -e "line_a\nline_b" > "$FAKE_HOME/merge_base"
+# upstream: added line_c
+echo -e "line_a\nline_b\nline_c" > "$FAKE_HOME/repo_file"
+# user: same as base (no unique additions)
+echo -e "line_a\nline_b" > "$FAKE_HOME/dest_file"
+
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    if try_smart_resolve "$HOME/repo_file" "$HOME/dest_file" "$HOME/merge_base" "test"; then
+        echo "RESULT=resolved"
+    else
+        echo "RESULT=failed"
+    fi
+' 2>&1) || true
+
+if echo "$output" | grep -q "RESULT=resolved"; then
+    test_pass "try_smart_resolve auto-resolves when no unique user additions"
+else
+    test_fail "try_smart_resolve should auto-resolve" "$output"
+fi
+
+# dest should now match upstream
+if diff -q "$FAKE_HOME/dest_file" "$FAKE_HOME/repo_file" &>/dev/null; then
+    test_pass "dest updated to upstream content"
+else
+    test_fail "dest should match upstream after auto-resolve"
+fi
+
+# backup should exist
+assert_file_exists "$FAKE_HOME/dest_file.bak" "Backup created during auto-resolve"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 38: try_smart_resolve — user additions saved to shellrc.local
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 38: try_smart_resolve — user additions saved to shellrc.local ──"
+FAKE_HOME=$(setup_fake_home "test38")
+mkdir -p "$FAKE_HOME/.config/starship-deploy/deployed"
+
+# Create .shellrc.local so it exists
+echo "# local overrides" > "$FAKE_HOME/.shellrc.local"
+
+# base: two lines
+echo -e "line_a\nline_b" > "$FAKE_HOME/merge_base"
+# upstream: added line_c
+echo -e "line_a\nline_b\nline_c" > "$FAKE_HOME/repo_file"
+# user: added a unique line
+echo -e "line_a\nline_b\nulimit -n 65536" > "$FAKE_HOME/dest_file"
+
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    echo "Y" | try_smart_resolve "$HOME/repo_file" "$HOME/dest_file" "$HOME/merge_base" "test"
+    echo "EXITCODE=$?"
+' 2>&1) || true
+
+if echo "$output" | grep -q "EXITCODE=0"; then
+    test_pass "try_smart_resolve returns success when user accepts"
+else
+    test_fail "try_smart_resolve should return 0" "$output"
+fi
+
+# dest should match upstream
+if diff -q "$FAKE_HOME/dest_file" "$FAKE_HOME/repo_file" &>/dev/null; then
+    test_pass "dest updated to upstream content"
+else
+    test_fail "dest should match upstream"
+fi
+
+# user addition should be in .shellrc.local
+if grep -q "ulimit -n 65536" "$FAKE_HOME/.shellrc.local" 2>/dev/null; then
+    test_pass "User addition preserved in .shellrc.local"
+else
+    test_fail "User addition should be in .shellrc.local"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 39: try_smart_resolve — user declines, returns failure
+# ═══════════════════════════════════════════════════════════════════
+echo "── Test 39: try_smart_resolve — user declines, returns failure ──"
+FAKE_HOME=$(setup_fake_home "test39")
+mkdir -p "$FAKE_HOME/.config/starship-deploy/deployed"
+
+echo -e "line_a\nline_b" > "$FAKE_HOME/merge_base"
+echo -e "line_a\nline_b\nline_c" > "$FAKE_HOME/repo_file"
+echo -e "line_a\nline_b\nulimit -n 65536" > "$FAKE_HOME/dest_file"
+cp "$FAKE_HOME/dest_file" "$FAKE_HOME/dest_file.orig"
+
+output=$(run_in_sandbox "$FAKE_HOME" "zsh" '
+    echo "n" | try_smart_resolve "$HOME/repo_file" "$HOME/dest_file" "$HOME/merge_base" "test"
+    echo "EXITCODE=$?"
+' 2>&1) || true
+
+if echo "$output" | grep -q "EXITCODE=1"; then
+    test_pass "try_smart_resolve returns failure when user declines"
+else
+    test_fail "try_smart_resolve should return 1 on decline" "$output"
+fi
+
+# dest should be unchanged
+if diff -q "$FAKE_HOME/dest_file" "$FAKE_HOME/dest_file.orig" &>/dev/null; then
+    test_pass "dest file unchanged after decline"
+else
+    test_fail "dest should not be modified when user declines"
 fi
 echo ""
 

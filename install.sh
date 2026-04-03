@@ -4,8 +4,6 @@
 # ║  Shell-agnostic: deploys for bash or zsh based on system default║
 # ║  Run: bash install.sh                                           ║
 # ╚══════════════════════════════════════════════════════════════════╝
-set -euo pipefail
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -30,6 +28,12 @@ as_root() {
         sudo "$@"
     fi
 }
+
+# ─── Main guard: everything below only runs when executed directly ─
+# When sourced by another script (e.g. test_upgrade.sh), only the
+# library definitions above are loaded — no side effects.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+set -euo pipefail
 
 # ─── Parse flags ────────────────────────────────────────────────
 INSTALL_ZSH=""
@@ -66,6 +70,7 @@ DEFAULT_SHELL="$(basename "${SHELL:-/bin/bash}")"
 CURRENT_USER="${USER:-$(whoami)}"
 info "Detected: $OS ${DISTRO:+($DISTRO)} — default shell: $DEFAULT_SHELL — user: $CURRENT_USER"
 echo ""
+fi  # end main guard (part 1: flag parsing + platform detection)
 
 # ─── macOS: Install via Homebrew ──────────────────────────────────
 install_macos() {
@@ -239,7 +244,7 @@ install_debian() {
         [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
         wget -qO /tmp/doggo.tar.gz "https://github.com/mr-karan/doggo/releases/download/v1.1.5/doggo_1.1.5_Linux_${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/doggo.tar.gz
         if [[ -s /tmp/doggo.tar.gz ]]; then
-            tar xzf /tmp/doggo.tar.gz -C /tmp doggo
+            tar xzf /tmp/doggo.tar.gz --strip-components=1 -C /tmp --wildcards '*/doggo'
             as_root mv /tmp/doggo /usr/local/bin/
             rm /tmp/doggo.tar.gz
         else
@@ -428,7 +433,7 @@ install_fedora() {
         [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
         wget -qO /tmp/doggo.tar.gz "https://github.com/mr-karan/doggo/releases/download/v1.1.5/doggo_1.1.5_Linux_${ARCH}.tar.gz" 2>/dev/null || rm -f /tmp/doggo.tar.gz
         if [[ -s /tmp/doggo.tar.gz ]]; then
-            tar xzf /tmp/doggo.tar.gz -C /tmp doggo
+            tar xzf /tmp/doggo.tar.gz --strip-components=1 -C /tmp --wildcards '*/doggo'
             as_root mv /tmp/doggo /usr/local/bin/
             rm /tmp/doggo.tar.gz
         else
@@ -1345,7 +1350,8 @@ check_nerd_font() {
     echo ""
 }
 
-# ─── Main ─────────────────────────────────────────────────────────
+# ─── Main (only when executed directly) ───────────────────────────
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║       Terminal Setup Installer — Sysadmin Edition           ║"
@@ -1376,7 +1382,7 @@ if [[ "$OS" == "Linux" && "$DEFAULT_SHELL" != "zsh" ]]; then
         install_zsh_shell
     else
         echo ""
-        local ZSH_PROMPT="Install zsh and set as default shell"
+        ZSH_PROMPT="Install zsh and set as default shell"
         if [[ "$CURRENT_USER" == "root" ]]; then
             ZSH_PROMPT+=" for root? [y/N] "
         else
@@ -1406,3 +1412,5 @@ echo "║                                                             ║"
 echo "║  Quick test:  starship --version && eza --version           ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
+
+fi  # end main guard
